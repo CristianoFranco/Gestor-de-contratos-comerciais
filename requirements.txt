@@ -1,8 +1,2 @@
 streamlit
 pandas
-gspread
-google-auth
-openpyxl
-matplotlib
-reportlab
-from dateutil.relativedelta import relativedelta
