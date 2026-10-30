@@ -109,7 +109,7 @@ def enviar_email(provedor, email_remetente, senha, email_destino, assunto, mensa
 
 def executar_automacao_alertas():
     if "email_remetente" not in st.session_state or not st.session_state["email_remetente"]:
-        return "Configure as credenciais de correio eletrónico na aba 'Configurações de E-mail' para ativar a automação."
+        return "Configure as credenciais de correio eletrónico na aba Configurações de E-mail para ativar a automação."
 
     conn = sqlite3.connect("contratos.db")
     c = conn.cursor()
@@ -183,4 +183,41 @@ with st.sidebar:
 # ==========================================
 if opcao == "Cadastro de Contrato":
     st.header("📝 Gestão de Cadastros de Contratos")
-    st.write("Cad
+    st.write("Cadastre novos contratos ou gerencie os registos já existentes.")
+    
+    tab_cad, tab_edit = st.tabs(["➕ Novo Contrato", "✏️ Editar / Excluir Contrato Existente"])
+    
+    with tab_cad:
+        with st.form("form_cadastro", clear_on_submit=True):
+            col1, col2 = st.columns(2)
+            with col1:
+                cliente = st.text_input("Nome do Cliente *")
+                num_contrato = st.text_input("Número do Contrato *")
+                data_inicio = st.date_input("Data de Início do Contrato", datetime.now(), key="cad_data_inicio")
+            
+            with col2:
+                vigencia_meses = st.number_input("Vigência / Período do Reajuste (em Meses) *", min_value=1, value=12, step=1, key="cad_vigencia")
+                email_cliente = st.text_input("E-mail do Cliente *")
+                telefone_cliente = st.text_input("Telefone do Cliente *")
+
+            # Cálculo dinâmico e exato de meses
+            total_meses = int(vigencia_meses)
+            anos_extras = total_meses // 12
+            meses_extras = total_meses % 12
+            
+            ano_alvo = data_inicio.year + anos_extras + (data_inicio.month + meses_extras - 1) // 12
+            mes_alvo = (data_inicio.month + meses_extras - 1) % 12 + 1
+            dia_alvo = data_inicio.day
+            
+            ultimo_dia_mes_alvo = calendar.monthrange(ano_alvo, mes_alvo)[1]
+            if dia_alvo > ultimo_dia_mes_alvo:
+                dia_alvo = ultimo_dia_mes_alvo
+                
+            data_fim_calculada = datetime(ano_alvo, mes_alvo, dia_alvo).date()
+
+            st.info(f"📅 Previsão de Término / Renovação: {data_fim_calculada.strftime('%d/%m/%Y')}")
+
+            submitted = st.form_submit_button("💾 Salvar Contrato")
+            if submitted:
+                if not cliente or not num_contrato or not email_cliente:
+                    st.error("Por favor, preencha todos os
