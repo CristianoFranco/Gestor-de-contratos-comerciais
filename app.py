@@ -29,16 +29,6 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# FUNÇÃO PARA EXIBIR O LOGOTIPO CENTRALIZADO
-# ==========================================
-def exibir_logo_centralizado(largura=300):
-    caminho_logo = "Logo.png" if os.path.exists("Logo.png") else ("logo.png" if os.path.exists("logo.png") else None)
-    if caminho_logo:
-        col1, col2, col3 = st.columns([1, 2, 1])
-        with col2:
-            st.image(caminho_logo, width=largura)
-
-# ==========================================
 # CONEXÃO COM O SUPABASE
 # ==========================================
 @st.cache_resource
@@ -186,9 +176,9 @@ with st.sidebar:
 # TELA 01: CADASTRO, EDIÇÃO E EXCLUSÃO
 # ==========================================
 if opcao == "Cadastro de Contrato":
-    exibir_logo_centralizado(280)
-    st.header("📝 Gestão de Cadastros de Contratos")
-    st.write("Cadastre novos contratos ou gerencie os registos existentes.")
+    st.markdown("<h1 style='text-align: center; color: #0c3547;'>📝 Gestão de Cadastros de Contratos</h1>", unsafe_allow_html=True)
+    st.markdown("<p style='text-align: center; color: #666;'>Cadastre novos contratos ou gerencie os registos existentes.</p>", unsafe_allow_html=True)
+    st.markdown("<br>", unsafe_allow_html=True)
     
     tab_cad, tab_edit = st.tabs(["➕ Novo Contrato", "✏️ Editar / Excluir Contrato"])
     
@@ -330,9 +320,9 @@ if opcao == "Cadastro de Contrato":
 # TELA 02, 03 & 04: GESTÃO DE CONTRATOS
 # ==========================================
 elif opcao == "Gestão de Contratos":
-    exibir_logo_centralizado(280)
-    st.header("📊 Painel de Gestão de Contratos")
-    st.write("Acompanhe os contratos ordenados por urgência.")
+    st.markdown("<h1 style='text-align: center; color: #0c3547;'>📊 Painel de Gestão de Contratos</h1>", unsafe_allow_html=True)
+    st.markdown("<p style='text-align: center; color: #666;'>Acompanhe os contratos ordenados por urgência.</p>", unsafe_allow_html=True)
+    st.markdown("<br>", unsafe_allow_html=True)
 
     if "automacao_executada" not in st.session_state:
         msg_auto = executar_automacao_alertas()
@@ -419,79 +409,3 @@ elif opcao == "Gestão de Contratos":
             
             nova_data_inicio = datetime.now().date()
             if tipo_reajuste == "Manter Vigência em Meses":
-                novos_meses = st.number_input("Nova Vigência (meses)", min_value=1, value=int(contrato_atual['vigencia_meses']))
-                
-                t_m = int(novos_meses)
-                a_e = t_m // 12
-                m_e = t_m % 12
-                a_a = nova_data_inicio.year + a_e + (nova_data_inicio.month + m_e - 1) // 12
-                m_a = (nova_data_inicio.month + m_e - 1) % 12 + 1
-                d_a = nova_data_inicio.day
-                ultimo_d_a = calendar.monthrange(a_a, m_a)[1]
-                if d_a > ultimo_d_a:
-                    d_a = ultimo_d_a
-                nova_data_fim = datetime(a_a, m_a, d_a).date()
-            else:
-                novos_meses = contrato_atual['vigencia_meses']
-                nova_data_fim = st.date_input("Nova Data Fim", nova_data_inicio + timedelta(days=365))
-
-            if st.button("✅ Confirmar Renovação"):
-                try:
-                    dados_renovacao = {
-                        "status": "Ativo",
-                        "data_inicio": str(nova_data_inicio),
-                        "vigencia_meses": novos_meses,
-                        "data_fim": str(nova_data_fim),
-                        "alerta_45_enviado": 0,
-                        "alerta_30_enviado": 0
-                    }
-                    supabase.table("contratos").update(dados_renovacao).eq("id", contrato_id).execute()
-                    st.success("Contrato renovado com sucesso!")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Erro ao renovar: {e}")
-
-        else:
-            if st.button("💾 Salvar Status"):
-                try:
-                    supabase.table("contratos").update({"status": novo_status}).eq("id", contrato_id).execute()
-                    st.success("Status atualizado!")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Erro ao atualizar status: {e}")
-
-# ------------------------------------------
-# TELA 05: CONFIGURAÇÕES DE E-MAIL
-# ------------------------------------------
-elif opcao == "Configurações de E-mail":
-    exibir_logo_centralizado(280)
-    st.header("⚙️ Configurações de E-mail")
-    st.write("Configure as credenciais para disparos automáticos. Os dados ficam salvos de forma segura na nuvem.")
-
-    provedor = st.selectbox("Provedor", ["Outlook / Office365", "Gmail"], index=0 if st.session_state.get("provedor") == "Outlook / Office365" else 1)
-    email_remetente = st.text_input("E-mail Remetente", value=st.session_state.get("email_remetente", ""))
-    senha_remetente = st.text_input("Senha / Senha de App", type="password", value=st.session_state.get("senha_remetente", ""))
-    email_comercial = st.text_input("E-mail do Comercial Globex", value=st.session_state.get("email_comercial_globex", ""))
-
-    if st.button("💾 Salvar Configurações"):
-        if not email_remetente or not senha_remetente or not email_comercial:
-            st.error("Preencha todos os campos de e-mail.")
-        else:
-            try:
-                dados_config = {
-                    "id": 1,
-                    "provedor": provedor,
-                    "email_remetente": email_remetente,
-                    "senha_remetente": senha_remetente,
-                    "email_comercial_globex": email_comercial
-                }
-                supabase.table("config_email").upsert(dados_config).execute()
-                
-                st.session_state["provedor"] = provedor
-                st.session_state["email_remetente"] = email_remetente
-                st.session_state["senha_remetente"] = senha_remetente
-                st.session_state["email_comercial_globex"] = email_comercial
-                
-                st.success("Configurações salvas com sucesso no Supabase!")
-            except Exception as e:
-                st.error(f"Erro ao salvar configurações no banco: {e}")
