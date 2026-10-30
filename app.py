@@ -183,8 +183,4 @@ with st.sidebar:
 # ==========================================
 if opcao == "Cadastro de Contrato":
     st.header("📝 Gestão de Cadastros de Contratos")
-    st.write("Cadastre novos contratos ou gerencie (edite/exclua) os registos já existentes.")
-    
-    tab_cad, tab_edit = st.tabs(["➕ Novo Contrato", "✏️ Editar / Excluir Contrato Existente"])
-    
-    with tab_cad:
+    st.write("Cad
