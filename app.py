@@ -34,21 +34,7 @@ def init_db():
     try:
         with sqlite3.connect("contratos.db") as conn:
             c = conn.cursor()
-            c.execute('''
-                CREATE TABLE IF NOT EXISTS contratos (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    cliente TEXT NOT NULL,
-                    num_contrato TEXT UNIQUE NOT NULL,
-                    data_inicio DATE NOT NULL,
-                    vigencia_meses INTEGER NOT NULL,
-                    data_fim DATE NOT NULL,
-                    email_cliente TEXT NOT NULL,
-                    telefone_cliente TEXT NOT NULL,
-                    status TEXT NOT NULL,
-                    alerta_45_enviado INTEGER DEFAULT 0,
-                    alerta_30_enviado INTEGER DEFAULT 0
-                )
-            ''')
+            c.execute('CREATE TABLE IF NOT EXISTS contratos (id INTEGER PRIMARY KEY AUTOINCREMENT, cliente TEXT NOT NULL, num_contrato TEXT UNIQUE NOT NULL, data_inicio DATE NOT NULL, vigencia_meses INTEGER NOT NULL, data_fim DATE NOT NULL, email_cliente TEXT NOT NULL, telefone_cliente TEXT NOT NULL, status TEXT NOT NULL, alerta_45_enviado INTEGER DEFAULT 0, alerta_30_enviado INTEGER DEFAULT 0)')
             conn.commit()
     except Exception as e:
         st.error(f"Erro ao inicializar a base de dados: {e}")
@@ -108,14 +94,7 @@ def executar_automacao_alertas():
                     assunto = f"[ALERTA RENOVAÇÃO] Contrato próximo de vencer - {cliente}"
                     corpo = f"Atenção Comercial Globex,\n\nExiste um contrato próximo ao período de renovação.\n\nCliente: {cliente}\nNº Contrato: {num_contrato}\nData de Vencimento: {data_fim_str}\nDias restantes: {dias_restantes}"
                     
-                    sucesso, err = enviar_email(
-                        st.session_state["provedor"],
-                        st.session_state["email_remetente"],
-                        st.session_state["senha_remetente"],
-                        st.session_state["email_comercial_globex"],
-                        assunto,
-                        corpo
-                    )
+                    sucesso, err = enviar_email(st.session_state["provedor"], st.session_state["email_remetente"], st.session_state["senha_remetente"], st.session_state["email_comercial_globex"], assunto, corpo)
                     if sucesso:
                         c.execute("UPDATE contratos SET alerta_45_enviado = 1, status = 'Informado ao comercial por email' WHERE id = ?", (cid,))
                         disparos_45 += 1
@@ -125,14 +104,7 @@ def executar_automacao_alertas():
                     assunto = f"Globex Multimodal - Renovação de Contrato Nº {num_contrato}"
                     corpo = f"Prezado(a) cliente {cliente},\n\nSeu contrato está chegando próximo à renovação. Aguarde contato da Globex.\n\nAtenciosamente,\nGlobex Multimodal"
                     
-                    sucesso, err = enviar_email(
-                        st.session_state["provedor"],
-                        st.session_state["email_remetente"],
-                        st.session_state["senha_remetente"],
-                        email_cliente,
-                        assunto,
-                        corpo
-                    )
+                    sucesso, err = enviar_email(st.session_state["provedor"], st.session_state["email_remetente"], st.session_state["senha_remetente"], email_cliente, assunto, corpo)
                     if sucesso:
                         c.execute("UPDATE contratos SET alerta_30_enviado = 1, status = 'Informado ao cliente por email' WHERE id = ?", (cid,))
                         disparos_30 += 1
@@ -162,23 +134,4 @@ with st.sidebar:
 # ==========================================
 if opcao == "Cadastro de Contrato":
     st.header("📝 Gestão de Cadastros de Contratos")
-    st.write("Cadastre novos contratos ou gerencie os registos existentes.")
-    
-    tab_cad, tab_edit = st.tabs(["➕ Novo Contrato", "✏️ Editar / Excluir Contrato"])
-    
-    with tab_cad:
-        st.subheader("Novo Contrato")
-        col1, col2 = st.columns(2)
-        with col1:
-            cliente = st.text_input(
-                "Nome do Cliente *", 
-                key="cad_cliente"
-            )
-            num_contrato = st.text_input(
-                "Número do Contrato *", 
-                key="cad_num"
-            )
-            data_inicio = st.date_input(
-                "Data de Início do Contrato", 
-                datetime.now(), 
-                key="cad_data_inicio"
+    st.write("Cadastre novos contratos ou gerencie os registos existentes
