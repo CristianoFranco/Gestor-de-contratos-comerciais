@@ -31,25 +31,31 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 def init_db():
-    conn = sqlite3.connect("contratos.db")
-    c = conn.cursor()
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS contratos (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            cliente TEXT NOT NULL,
-            num_contrato TEXT UNIQUE NOT NULL,
-            data_inicio DATE NOT NULL,
-            vigencia_meses INTEGER NOT NULL,
-            data_fim DATE NOT NULL,
-            email_cliente TEXT NOT NULL,
-            telefone_cliente TEXT NOT NULL,
-            status TEXT NOT NULL,
-            alerta_45_enviado INTEGER DEFAULT 0,
-            alerta_30_enviado INTEGER DEFAULT 0
-        )
-    ''')
-    conn.commit()
-    conn.close()
+    conn = None
+    try:
+        conn = sqlite3.connect("contratos.db")
+        c = conn.cursor()
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS contratos (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                cliente TEXT NOT NULL,
+                num_contrato TEXT UNIQUE NOT NULL,
+                data_inicio DATE NOT NULL,
+                vigencia_meses INTEGER NOT NULL,
+                data_fim DATE NOT NULL,
+                email_cliente TEXT NOT NULL,
+                telefone_cliente TEXT NOT NULL,
+                status TEXT NOT NULL,
+                alerta_45_enviado INTEGER DEFAULT 0,
+                alerta_30_enviado INTEGER DEFAULT 0
+            )
+        ''')
+        conn.commit()
+    except Exception as e:
+        print(f"Erro ao inicializar BD: {e}")
+    finally:
+        if conn:
+            conn.close()
 
 init_db()
 
@@ -86,57 +92,63 @@ def executar_automacao_alertas():
     if "email_remetente" not in st.session_state or not st.session_state["email_remetente"]:
         return "Configure as credenciais de e-mail na aba Configurações de E-mail."
 
-    conn = sqlite3.connect("contratos.db")
-    c = conn.cursor()
-    c.execute("SELECT id, cliente, num_contrato, data_fim, email_cliente, alerta_45_enviado, alerta_30_enviado, status FROM contratos")
-    contratos = c.fetchall()
+    conn = None
+    try:
+        conn = sqlite3.connect("contratos.db")
+        c = conn.cursor()
+        c.execute("SELECT id, cliente, num_contrato, data_fim, email_cliente, alerta_45_enviado, alerta_30_enviado, status FROM contratos")
+        contratos = c.fetchall()
 
-    hoje = datetime.now().date()
-    disparos_45 = 0
-    disparos_30 = 0
+        hoje = datetime.now().date()
+        disparos_45 = 0
+        disparos_30 = 0
 
-    for item in contratos:
-        cid, cliente, num_contrato, data_fim_str, email_cliente, a45, a30, status_atual = item
-        data_fim = datetime.strptime(data_fim_str, "%Y-%m-%d").date()
-        dias_restantes = (data_fim - hoje).days
+        for item in contratos:
+            cid, cliente, num_contrato, data_fim_str, email_cliente, a45, a30, status_atual = item
+            data_fim = datetime.strptime(data_fim_str, "%Y-%m-%d").date()
+            dias_restantes = (data_fim - hoje).days
 
-        # 45 dias -> Comercial Globex
-        if dias_restantes <= 45 and dias_restantes > 30 and a45 == 0:
-            assunto = f"[ALERTA RENOVAÇÃO] Contrato próximo de vencer - {cliente}"
-            corpo = f"Atenção Comercial Globex,\n\nExiste um contrato próximo ao período de renovação.\n\nCliente: {cliente}\nNº Contrato: {num_contrato}\nData de Vencimento: {data_fim_str}\nDias restantes: {dias_restantes}"
-            
-            sucesso, err = enviar_email(
-                st.session_state["provedor"],
-                st.session_state["email_remetente"],
-                st.session_state["senha_remetente"],
-                st.session_state["email_comercial_globex"],
-                assunto,
-                corpo
-            )
-            if sucesso:
-                c.execute("UPDATE contratos SET alerta_45_enviado = 1, status = 'Informado ao comercial por email' WHERE id = ?", (cid,))
-                disparos_45 += 1
+            # 45 dias -> Comercial Globex
+            if dias_restantes <= 45 and dias_restantes > 30 and a45 == 0:
+                assunto = f"[ALERTA RENOVAÇÃO] Contrato próximo de vencer - {cliente}"
+                corpo = f"Atenção Comercial Globex,\n\nExiste um contrato próximo ao período de renovação.\n\nCliente: {cliente}\nNº Contrato: {num_contrato}\nData de Vencimento: {data_fim_str}\nDias restantes: {dias_restantes}"
+                
+                sucesso, err = enviar_email(
+                    st.session_state["provedor"],
+                    st.session_state["email_remetente"],
+                    st.session_state["senha_remetente"],
+                    st.session_state["email_comercial_globex"],
+                    assunto,
+                    corpo
+                )
+                if sucesso:
+                    c.execute("UPDATE contratos SET alerta_45_enviado = 1, status = 'Informado ao comercial por email' WHERE id = ?", (cid,))
+                    disparos_45 += 1
 
-        # 30 dias -> Cliente
-        elif dias_restantes <= 30 and a30 == 0:
-            assunto = f"Globex Multimodal - Renovação de Contrato Nº {num_contrato}"
-            corpo = f"Prezado(a) cliente {cliente},\n\nSeu contrato está chegando próximo à renovação. Aguarde contato da Globex.\n\nAtenciosamente,\nGlobex Multimodal"
-            
-            sucesso, err = enviar_email(
-                st.session_state["provedor"],
-                st.session_state["email_remetente"],
-                st.session_state["senha_remetente"],
-                email_cliente,
-                assunto,
-                corpo
-            )
-            if sucesso:
-                c.execute("UPDATE contratos SET alerta_30_enviado = 1, status = 'Informado ao cliente por email' WHERE id = ?", (cid,))
-                disparos_30 += 1
+            # 30 dias -> Cliente
+            elif dias_restantes <= 30 and a30 == 0:
+                assunto = f"Globex Multimodal - Renovação de Contrato Nº {num_contrato}"
+                corpo = f"Prezado(a) cliente {cliente},\n\nSeu contrato está chegando próximo à renovação. Aguarde contato da Globex.\n\nAtenciosamente,\nGlobex Multimodal"
+                
+                sucesso, err = enviar_email(
+                    st.session_state["provedor"],
+                    st.session_state["email_remetente"],
+                    st.session_state["senha_remetente"],
+                    email_cliente,
+                    assunto,
+                    corpo
+                )
+                if sucesso:
+                    c.execute("UPDATE contratos SET alerta_30_enviado = 1, status = 'Informado ao cliente por email' WHERE id = ?", (cid,))
+                    disparos_30 += 1
 
-    conn.commit()
-    conn.close()
-    return f"Automação executada! Comercial: {disparos_45} | Cliente: {disparos_30}"
+        conn.commit()
+        return f"Automação executada! Comercial: {disparos_45} | Cliente: {disparos_30}"
+    except Exception as e:
+        return f"Erro na automação: {e}"
+    finally:
+        if conn:
+            conn.close()
 
 # ==========================================
 # BARRA LATERAL (SIDEBAR) COM LOGOTIPO
@@ -169,31 +181,3 @@ if opcao == "Cadastro de Contrato":
             cliente = st.text_input("Nome do Cliente *", key="cad_cliente")
             num_contrato = st.text_input("Número do Contrato *", key="cad_num")
             data_inicio = st.date_input("Data de Início do Contrato", datetime.now(), key="cad_data_inicio")
-        
-        with col2:
-            email_cliente = st.text_input("E-mail do Cliente *", key="cad_email")
-            telefone_cliente = st.text_input("Telefone do Cliente *", key="cad_tel")
-            vigencia_meses = st.number_input("Vigência / Período do Reajuste (em Meses) *", min_value=1, value=12, step=1, key="cad_vigencia")
-
-        # Cálculo dinâmico e exato de meses (atualiza na hora ao mexer em vigência ou data)
-        total_meses = int(vigencia_meses)
-        anos_extras = total_meses // 12
-        meses_extras = total_meses % 12
-        
-        ano_alvo = data_inicio.year + anos_extras + (data_inicio.month + meses_extras - 1) // 12
-        mes_alvo = (data_inicio.month + meses_extras - 1) % 12 + 1
-        dia_alvo = data_inicio.day
-        
-        ultimo_dia_mes_alvo = calendar.monthrange(ano_alvo, mes_alvo)[1]
-        if dia_alvo > ultimo_dia_mes_alvo:
-            dia_alvo = ultimo_dia_mes_alvo
-            
-        data_fim_calculada = datetime(ano_alvo, mes_alvo, dia_alvo).date()
-
-        st.info(f"📅 Previsão de Término / Renovação: {data_fim_calculada.strftime('%d/%m/%Y')}")
-
-        if st.button("💾 Salvar Contrato", key="btn_salvar_novo"):
-            if not cliente or not num_contrato or not email_cliente:
-                st.error("Por favor, preencha todos os campos obrigatórios (*).")
-            else:
-                conn
