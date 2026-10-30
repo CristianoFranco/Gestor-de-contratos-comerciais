@@ -134,7 +134,9 @@ def executar_automacao_alertas():
                     supabase.table("contratos").update({"alerta_30_enviado": 1, "status": "Informado ao cliente por email"}).eq("id", cid).execute()
                     disparos_30 += 1
 
-        return f"Automação executada! Comercial: {disparos_45} | Cliente: {disparos_30}"
+        if disparos_45 > 0 or disparos_30 > 0:
+            return f"Automação executada com sucesso! Comercial: {disparos_45} | Cliente: {disparos_30}"
+        return "Nenhum alerta pendente no momento."
     except Exception as e:
         return f"Erro na automação: {e}"
 
@@ -237,13 +239,13 @@ if opcao == "Cadastro de Contrato":
             
             col1, col2 = st.columns(2)
             with col1:
-                novo_cliente = st.text_input("Nome do Cliente *", value=c_data['cliente'])
-                novo_num_contrato = st.text_input("Número do Contrato *", value=c_data['num_contrato'])
-                data_inicio_edit = st.date_input("Data de Início", value=datetime.strptime(c_data['data_inicio'], "%Y-%m-%d").date())
+                novo_cliente = st.text_input("Nome do Cliente *", value=c_data['cliente'], key=f"edit_cliente_{cid_edit}")
+                novo_num_contrato = st.text_input("Número do Contrato *", value=c_data['num_contrato'], key=f"edit_num_{cid_edit}")
+                data_inicio_edit = st.date_input("Data de Início", value=datetime.strptime(c_data['data_inicio'], "%Y-%m-%d").date(), key=f"edit_data_{cid_edit}")
             with col2:
-                novo_email = st.text_input("E-mail do Cliente *", value=c_data['email_cliente'])
-                novo_tel = st.text_input("Telefone do Cliente *", value=c_data['telefone_cliente'])
-                nova_vigencia = st.number_input("Vigência (Meses) *", min_value=1, value=int(c_data['vigencia_meses']), step=1)
+                novo_email = st.text_input("E-mail do Cliente *", value=c_data['email_cliente'], key=f"edit_email_{cid_edit}")
+                novo_tel = st.text_input("Telefone do Cliente *", value=c_data['telefone_cliente'], key=f"edit_tel_{cid_edit}")
+                nova_vigencia = st.number_input("Vigência (Meses) *", min_value=1, value=int(c_data['vigencia_meses']), step=1, key=f"edit_vig_{cid_edit}")
             
             t_meses = int(nova_vigencia)
             a_extras = t_meses // 12
@@ -258,7 +260,7 @@ if opcao == "Cadastro de Contrato":
 
             st.info(f"📅 Nova Data Fim Recalculada: {nova_data_fim.strftime('%d/%m/%Y')}")
             
-            if st.button("💾 Salvar Alterações", key="btn_salvar_edit"):
+            if st.button("💾 Salvar Alterações", key=f"btn_salvar_edit_{cid_edit}"):
                 if not novo_cliente or not novo_num_contrato or not novo_email:
                     st.error("Preencha todos os campos obrigatórios (*).")
                 else:
@@ -288,7 +290,7 @@ if opcao == "Cadastro de Contrato":
             st.markdown("---")
             st.subheader("⚠️ Zona de Exclusão")
             
-            if st.button("🗑️ Excluir Contrato Permanentemente", key="btn_excluir"):
+            if st.button("🗑️ Excluir Contrato Permanentemente", key=f"btn_excluir_{cid_edit}"):
                 try:
                     supabase.table("contratos").delete().eq("id", cid_edit).execute()
                     st.success("Contrato excluído!")
@@ -303,9 +305,16 @@ elif opcao == "Gestão de Contratos":
     st.header("📊 Painel de Gestão de Contratos")
     st.write("Acompanhe os contratos ordenados por urgência.")
 
+    # Executa a automação de alertas automaticamente ao abrir/recarregar a tela de gestão (apenas 1 vez por sessão)
+    if "automacao_executada" not in st.session_state:
+        msg_auto = executar_automacao_alertas()
+        st.session_state["automacao_executada"] = True
+        if "com sucesso" in msg_auto:
+            st.toast(msg_auto)
+
     col_btn1, col_btn2 = st.columns([1, 3])
     with col_btn1:
-        if st.button("🔄 Executar Alertas"):
+        if st.button("🔄 Executar Alertas Manualmente"):
             msg_res = executar_automacao_alertas()
             st.toast(msg_res)
             st.rerun()
