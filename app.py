@@ -263,9 +263,11 @@ if opcao == "Cadastro de Contrato":
                     st.error("Preencha todos os campos obrigatórios (*).")
                 else:
                     try:
-                        # Verificar se o número pertence a outro ID
-                        res_dup = supabase.table("contratos").select("id").eq("num_contrato", novo_num_contrato).neq("id", cid_edit).execute()
-                        if res_dup.data:
+                        # Verificação de duplicidade segura em Python (evita conflito com .neq())
+                        res_dup = supabase.table("contratos").select("id").eq("num_contrato", novo_num_contrato).execute()
+                        duplicado = [item for item in res_dup.data if item['id'] != cid_edit]
+                        
+                        if duplicado:
                             st.error("Erro: Este número de contrato já pertence a outro registo no sistema.")
                         else:
                             dados_atualizados = {
@@ -423,20 +425,7 @@ elif opcao == "Gestão de Contratos":
                     st.error(f"Erro ao atualizar status: {e}")
 
 # ------------------------------------------
-# TELA 05: CONFIGURAÇÕES DE E-MAIL
+# TELA 05:CONFIGURAÇÕES DE E-MAIL
 # ------------------------------------------
 elif opcao == "Configurações de E-mail":
-    st.header("⚙️ Configurações de E-mail")
-    st.write("Configure as credenciais para disparos automáticos.")
-
-    provedor = st.selectbox("Provedor", ["Outlook / Office365", "Gmail"])
-    email_remetente = st.text_input("E-mail Remetente", value=st.session_state.get("email_remetente", ""))
-    senha_remetente = st.text_input("Senha / Senha de App", type="password", value=st.session_state.get("senha_remetente", ""))
-    email_comercial = st.text_input("E-mail do Comercial Globex", value=st.session_state.get("email_comercial_globex", ""))
-
-    if st.button("💾 Salvar Configurações"):
-        st.session_state["provedor"] = provedor
-        st.session_state["email_remetente"] = email_remetente
-        st.session_state["senha_remetente"] = senha_remetente
-        st.session_state["email_comercial_globex"] = email_comercial
-        st.success("Configurações salvas!")
+    st.header("⚙️ Configurações de E-mail
