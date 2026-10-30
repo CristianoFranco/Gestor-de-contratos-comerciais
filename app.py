@@ -29,6 +29,16 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
+# FUNÇÃO PARA EXIBIR O LOGOTIPO CENTRALIZADO
+# ==========================================
+def exibir_logo_centralizado(largura=300):
+    caminho_logo = "Logo.png" if os.path.exists("Logo.png") else ("logo.png" if os.path.exists("logo.png") else None)
+    if caminho_logo:
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            st.image(caminho_logo, width=largura)
+
+# ==========================================
 # CONEXÃO COM O SUPABASE
 # ==========================================
 @st.cache_resource
@@ -98,7 +108,6 @@ def enviar_email(provedor, email_remetente, senha, email_destino, assunto, mensa
         return False, str(e)
 
 def executar_automacao_alertas():
-    # Garante que puxa do banco caso a session_state esteja vazia
     remetente = st.session_state.get("email_remetente") or config_db.get("email_remetente")
     senha = st.session_state.get("senha_remetente") or config_db.get("senha_remetente")
     prov = st.session_state.get("provedor") or config_db.get("provedor", "Outlook / Office365")
@@ -136,14 +145,7 @@ def executar_automacao_alertas():
                 assunto = f"[ALERTA RENOVAÇÃO] Contrato próximo de vencer - {cliente}"
                 corpo = f"Atenção Comercial Globex,\n\nExiste um contrato próximo ao período de renovação.\n\nCliente: {cliente}\nNº Contrato: {num_contrato}\nData de Vencimento: {data_fim_br}\nDias restantes: {dias_restantes}"
                 
-                sucesso, err = enviar_email(
-                    prov,
-                    remetente,
-                    senha,
-                    comercial,
-                    assunto,
-                    corpo
-                )
+                sucesso, err = enviar_email(prov, remetente, senha, comercial, assunto, corpo)
                 if sucesso:
                     supabase.table("contratos").update({"alerta_45_enviado": 1, "status": "Informado ao comercial por email"}).eq("id", cid).execute()
                     disparos_45 += 1
@@ -153,14 +155,7 @@ def executar_automacao_alertas():
                 assunto = f"Globex Multimodal - Renovação de Contrato Nº {num_contrato}"
                 corpo = f"Prezado(a) cliente {cliente},\n\nSeu contrato está chegando próximo à renovação. Aguarde contato da Globex.\n\nAtenciosamente,\nGlobex Multimodal"
                 
-                sucesso, err = enviar_email(
-                    prov,
-                    remetente,
-                    senha,
-                    email_cliente,
-                    assunto,
-                    corpo
-                )
+                sucesso, err = enviar_email(prov, remetente, senha, email_cliente, assunto, corpo)
                 if sucesso:
                     supabase.table("contratos").update({"alerta_30_enviado": 1, "status": "Informado ao cliente por email"}).eq("id", cid).execute()
                     disparos_30 += 1
@@ -172,11 +167,12 @@ def executar_automacao_alertas():
         return f"Erro na automação: {e}"
 
 # ==========================================
-# BARRA LATERAL (SIDEBAR) COM LOGOTIPO
+# BARRA LATERAL (SIDEBAR)
 # ==========================================
 with st.sidebar:
-    if os.path.exists("logo.png"):
-        st.image("logo.png", use_container_width=True)
+    caminho_logo_side = "Logo.png" if os.path.exists("Logo.png") else ("logo.png" if os.path.exists("logo.png") else None)
+    if caminho_logo_side:
+        st.image(caminho_logo_side, use_container_width=True)
     else:
         st.markdown("### 🌐 GLOBEX MULTIMODAL")
     
@@ -190,6 +186,7 @@ with st.sidebar:
 # TELA 01: CADASTRO, EDIÇÃO E EXCLUSÃO
 # ==========================================
 if opcao == "Cadastro de Contrato":
+    exibir_logo_centralizado(280)
     st.header("📝 Gestão de Cadastros de Contratos")
     st.write("Cadastre novos contratos ou gerencie os registos existentes.")
     
@@ -333,10 +330,10 @@ if opcao == "Cadastro de Contrato":
 # TELA 02, 03 & 04: GESTÃO DE CONTRATOS
 # ==========================================
 elif opcao == "Gestão de Contratos":
+    exibir_logo_centralizado(280)
     st.header("📊 Painel de Gestão de Contratos")
     st.write("Acompanhe os contratos ordenados por urgência.")
 
-    # Executa a automação de alertas automaticamente ao abrir/recarregar a tela de gestão (apenas 1 vez por sessão)
     if "automacao_executada" not in st.session_state:
         msg_auto = executar_automacao_alertas()
         st.session_state["automacao_executada"] = True
@@ -467,8 +464,9 @@ elif opcao == "Gestão de Contratos":
 # TELA 05: CONFIGURAÇÕES DE E-MAIL
 # ------------------------------------------
 elif opcao == "Configurações de E-mail":
+    exibir_logo_centralizado(280)
     st.header("⚙️ Configurações de E-mail")
-    st.write("Configure as credenciais para disparos automáticos. Os dados agora ficam salvos de forma segura na nuvem.")
+    st.write("Configure as credenciais para disparos automáticos. Os dados ficam salvos de forma segura na nuvem.")
 
     provedor = st.selectbox("Provedor", ["Outlook / Office365", "Gmail"], index=0 if st.session_state.get("provedor") == "Outlook / Office365" else 1)
     email_remetente = st.text_input("E-mail Remetente", value=st.session_state.get("email_remetente", ""))
@@ -487,10 +485,8 @@ elif opcao == "Configurações de E-mail":
                     "senha_remetente": senha_remetente,
                     "email_comercial_globex": email_comercial
                 }
-                # Salva ou atualiza no Supabase
                 supabase.table("config_email").upsert(dados_config).execute()
                 
-                # Atualiza na sessão local também
                 st.session_state["provedor"] = provedor
                 st.session_state["email_remetente"] = email_remetente
                 st.session_state["senha_remetente"] = senha_remetente
