@@ -149,35 +149,3 @@ def executar_automacao_alertas():
     finally:
         if conn:
             conn.close()
-
-# ==========================================
-# BARRA LATERAL (SIDEBAR) COM LOGOTIPO
-# ==========================================
-with st.sidebar:
-    if os.path.exists("logo.png"):
-        st.image("logo.png", use_container_width=True)
-    else:
-        st.markdown("### 🌐 GLOBEX MULTIMODAL")
-    
-    st.markdown("---")
-    menu = ["Cadastro de Contrato", "Gestão de Contratos", "Configurações de E-mail"]
-    opcao = st.radio("Navegação", menu)
-    st.markdown("---")
-    st.caption("© 2026 Globex Multimodal")
-
-# ==========================================
-# TELA 01: CADASTRO, EDIÇÃO E EXCLUSÃO
-# ==========================================
-if opcao == "Cadastro de Contrato":
-    st.header("📝 Gestão de Cadastros de Contratos")
-    st.write("Cadastre novos contratos ou gerencie os registos existentes.")
-    
-    tab_cad, tab_edit = st.tabs(["➕ Novo Contrato", "✏️ Editar / Excluir Contrato"])
-    
-    with tab_cad:
-        st.subheader("Novo Contrato")
-        col1, col2 = st.columns(2)
-        with col1:
-            cliente = st.text_input("Nome do Cliente *", key="cad_cliente")
-            num_contrato = st.text_input("Número do Contrato *", key="cad_num")
-            data_inicio = st.date_input("Data de Início do Contrato", datetime.now(), key="cad_data_inicio")
