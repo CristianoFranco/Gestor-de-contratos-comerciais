@@ -460,4 +460,28 @@ elif opcao == "Configurações de E-mail":
 
     provedor = st.selectbox("Provedor", ["Outlook / Office365", "Gmail"], index=0 if st.session_state.get("provedor") == "Outlook / Office365" else 1)
     email_remetente = st.text_input("E-mail Remetente", value=st.session_state.get("email_remetente", ""))
-    senha_remetente = st.text_input("Senha / Senha de App", type="password", value=st.session_state.get("senha_remetente",
+    senha_remetente = st.text_input("Senha / Senha de App", type="password", value=st.session_state.get("senha_remetente", ""))
+    email_comercial = st.text_input("E-mail do Comercial Globex", value=st.session_state.get("email_comercial_globex", ""))
+
+    if st.button("💾 Salvar Configurações"):
+        if not email_remetente or not senha_remetente or not email_comercial:
+            st.error("Preencha todos os campos de e-mail.")
+        else:
+            try:
+                dados_config = {
+                    "id": 1,
+                    "provedor": provedor,
+                    "email_remetente": email_remetente,
+                    "senha_remetente": senha_remetente,
+                    "email_comercial_globex": email_comercial
+                }
+                supabase.table("config_email").upsert(dados_config).execute()
+                
+                st.session_state["provedor"] = provedor
+                st.session_state["email_remetente"] = email_remetente
+                st.session_state["senha_remetente"] = senha_remetente
+                st.session_state["email_comercial_globex"] = email_comercial
+                
+                st.success("Configurações salvas com sucesso no Supabase!")
+            except Exception as e:
+                st.error(f"Erro ao salvar configurações no banco: {e}")
