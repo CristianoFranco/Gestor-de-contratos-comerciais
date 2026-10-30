@@ -185,178 +185,31 @@ with st.sidebar:
     st.caption("© 2026 Globex Multimodal - Gestor Inteligente")
 
 # ==========================================
-# TELA 01: CADASTRO DE CONTRATO
+# TELA 01: CADASTRO, EDIÇÃO E EXCLUSÃO
 # ==========================================
 if opcao == "Cadastro de Contrato":
-    st.header("📝 Cadastrar Novo Contrato")
-    st.write("Preencha os dados do cliente e a vigência para iniciar o monitoramento automatizado.")
+    st.header("📝 Gestão de Cadastros de Contratos")
+    st.write("Cadastre novos contratos ou gerencie (edite/exclua) os registros já existentes.")
     
-    with st.form("form_cadastro", clear_on_submit=True):
-        col1, col2 = st.columns(2)
-        with col1:
-            cliente = st.text_input("Nome do Cliente *")
-            num_contrato = st.text_input("Número do Contrato *")
-            data_inicio = st.date_input("Data de Início do Contrato", datetime.now())
-        
-        with col2:
-            vigencia_meses = st.number_input("Vigência / Período do Reajuste (em Meses) *", min_value=1, value=12, step=1)
-            email_cliente = st.text_input("E-mail do Cliente *")
-            telefone_cliente = st.text_input("Telefone do Cliente *")
-
-        data_fim_calculada = data_inicio + timedelta(days=vigencia_meses * 30)
-        st.info(f"📅 **Previsão de Término / Renovação:** {data_fim_calculada.strftime('%d/%m/%Y')}")
-
-        submitted = st.form_submit_button("💾 Salvar Contrato")
-        if submitted:
-            if not cliente or not num_contrato or not email_cliente:
-                st.error("Por favor, preencha todos os campos obrigatórios (*).")
-            else:
-                conn = sqlite3.connect("contratos.db")
-                c = conn.cursor()
-                try:
-                    c.execute('''
-                        INSERT INTO contratos (cliente, num_contrato, data_inicio, vigencia_meses, data_fim, email_cliente, telefone_cliente, status)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    ''', (cliente, num_contrato, data_inicio, vigencia_meses, data_fim_calculada, email_cliente, telefone_cliente, "Ativo"))
-                    conn.commit()
-                    st.success(f"Contrato {num_contrato} cadastrado com sucesso!")
-                except sqlite3.IntegrityError:
-                    st.error("Erro: Este número de contrato já está cadastrado no sistema.")
-                finally:
-                    conn.close()
-
-# ==========================================
-# TELA 02, 03 & 04: GESTÃO DE CONTRATOS
-# ==========================================
-elif opcao == "Gestão de Contratos":
-    st.header("📊 Painel de Gestão de Contratos")
-    st.write("Acompanhe os contratos ordenados por urgência de vencimento e gerencie os status.")
-
-    col_btn1, col_btn2 = st.columns([1, 3])
-    with col_btn1:
-        if st.button("🔄 Executar Alertas Automáticos"):
-            msg_res = executar_automacao_alertas()
-            st.toast(msg_res)
-            st.rerun()
-
-    conn = sqlite3.connect("contratos.db")
-    df = pd.read_sql_query("SELECT * FROM contratos", conn)
-    conn.close()
-
-    if df.empty:
-        st.warning("Nenhum contrato cadastrado até o momento.")
-    else:
-        hoje = datetime.now().date()
-        df['data_fim_dt'] = pd.to_datetime(df['data_fim']).dt.date
-        df['dias_restantes'] = df['data_fim_dt'].apply(lambda x: (x - hoje).days)
-        
-        # Ordenação automática: os que vão vencer primeiro aparecem nas linhas superiores
-        df = df.sort_values(by='dias_restantes', ascending=True)
-
-        # Indicadores Visuais Rápidos no Topo
-        total_contratos = len(df)
-        vencendo_breve = len(df[df['dias_restantes'] <= 45])
-        
-        mcol1, mcol2 = st.columns(2)
-        with mcol1:
-            st.markdown(f"""
-                <div class="metric-card">
-                    <h3 style="margin:0; color:#0c3547;">{total_contratos}</h3>
-                    <p style="margin:0; color:#666;">Total de Contratos Monitorados</p>
-                </div>
-            """, unsafe_allow_html=True)
-        with mcol2:
-            st.markdown(f"""
-                <div class="metric-card metric-card-alert">
-                    <h3 style="margin:0; color:#d90429;">{vencendo_breve}</h3>
-                    <p style="margin:0; color:#666;">Contratos Próximos de Vencer (≤ 45 dias)</p>
-                </div>
-            """, unsafe_allow_html=True)
-
-        st.markdown("<br>", unsafe_allow_html=True)
-        st.subheader("📋 Lista Geral de Contratos (Ordem Decrescente de Urgência)")
-        
-        display_df = df[['id', 'cliente', 'num_contrato', 'data_inicio', 'vigencia_meses', 'data_fim', 'dias_restantes', 'status']].copy()
-        display_df.columns = ['ID', 'Cliente', 'Nº Contrato', 'Início', 'Vigência (Meses)', 'Vencimento', 'Dias p/ Vencer', 'Status Atual']
-        st.dataframe(display_df, use_container_width=True)
-
-        st.divider()
-        st.subheader("⚙️ Atualização Manual de Status e Renovação")
-
-        contrato_id = st.selectbox("Selecione o Contrato:", df['id'].tolist(), format_func=lambda x: f"ID {x} - {df[df['id']==x]['cliente'].values[0]} (Contrato: {df[df['id']==x]['num_contrato'].values[0]})")
-        
-        contrato_atual = df[df['id'] == contrato_id].iloc[0]
-
-        st.info(f"**Cliente Selecionado:** {contrato_atual['cliente']} | **Status Atual:** `{contrato_atual['status']}` | **Vencimento:** {contrato_atual['data_fim']}")
-
-        opcoes_status = [
-            "Ativo",
-            "Informado ao comercial por email",
-            "Informado ao cliente por email",
-            "Em negociação com o cliente",
-            "Finalizado"
-        ]
-        
-        idx_def = opcoes_status.index(contrato_atual['status']) if contrato_atual['status'] in opcoes_status else 0
-        novo_status = st.selectbox("Selecione o Novo Status:", opcoes_status, index=idx_def)
-
-        # Regra do Finalizado (Renovação de Ciclo em Meses ou Manual)
-        if novo_status == "Finalizado":
-            st.warning("🔄 **Renovação de Ciclo:** Ao finalizar, o sistema configurará a nova data de início e reiniciará o ciclo de contagem por meses.")
+    tab_cad, tab_edit = st.tabs(["➕ Novo Contrato", "✏️ Editar / Excluir Contrato Existente"])
+    
+    with tab_cad:
+        with st.form("form_cadastro", clear_on_submit=True):
+            col1, col2 = st.columns(2)
+            with col1:
+                cliente = st.text_input("Nome do Cliente *")
+                num_contrato = st.text_input("Número do Contrato *")
+                data_inicio = st.date_input("Data de Início do Contrato", datetime.now())
             
-            tipo_reajuste = st.radio("Forma de reajuste do próximo ciclo:", ["Manter Vigência em Meses", "Ajustar Data Fim Manualmente"])
-            
-            nova_data_inicio = datetime.now().date()
-            if tipo_reajuste == "Manter Vigência em Meses":
-                novos_meses = st.number_input("Nova Vigência (em meses)", min_value=1, value=int(contrato_atual['vigencia_meses']))
-                nova_data_fim = nova_data_inicio + timedelta(days=novos_meses * 30)
-            else:
-                novos_meses = contrato_atual['vigencia_meses']
-                nova_data_fim = st.date_input("Nova Data Fim do Contrato", nova_data_inicio + timedelta(days=365))
+            with col2:
+                vigencia_meses = st.number_input("Vigência / Período do Reajuste (em Meses) *", min_value=1, value=12, step=1)
+                email_cliente = st.text_input("E-mail do Cliente *")
+                telefone_cliente = st.text_input("Telefone do Cliente *")
 
-            if st.button("✅ Confirmar Renovação e Reiniciar Ciclo"):
-                conn = sqlite3.connect("contratos.db")
-                c = conn.cursor()
-                c.execute('''
-                    UPDATE contratos 
-                    SET status = 'Ativo',
-                        data_inicio = ?,
-                        vigencia_meses = ?,
-                        data_fim = ?,
-                        alerta_45_enviado = 0,
-                        alerta_30_enviado = 0
-                    WHERE id = ?
-                ''', (nova_data_inicio, novos_meses, nova_data_fim, contrato_id))
-                conn.commit()
-                conn.close()
-                st.success("Contrato renovado e ciclo reiniciado com sucesso!")
-                st.rerun()
+            data_fim_calculada = data_inicio + timedelta(days=vigencia_meses * 30)
+            st.info(f"📅 **Previsão de Término / Renovação:** {data_fim_calculada.strftime('%d/%m/%Y')}")
 
-        else:
-            if st.button("💾 Salvar Alteração de Status"):
-                conn = sqlite3.connect("contratos.db")
-                c = conn.cursor()
-                c.execute("UPDATE contratos SET status = ? WHERE id = ?", (novo_status, contrato_id))
-                conn.commit()
-                conn.close()
-                st.success("Status atualizado com sucesso!")
-                st.rerun()
-
-# ------------------------------------------
-# TELA 05: CONFIGURAÇÕES DE E-MAIL
-# ------------------------------------------
-elif opcao == "Configurações de E-mail":
-    st.header("⚙️ Configurações de Conexão de E-mail")
-    st.write("Configure abaixo as credenciais de envio para automatizar os disparos do Outlook ou Gmail.")
-
-    provedor = st.selectbox("Provedor de E-mail", ["Outlook / Office365", "Gmail"])
-    email_remetente = st.text_input("E-mail Remetente (Automação)", value=st.session_state.get("email_remetente", ""))
-    senha_remetente = st.text_input("Senha / Senha de App", type="password", value=st.session_state.get("senha_remetente", ""))
-    email_comercial = st.text_input("E-mail do Comercial Globex (Destinatário do alerta de 45 dias)", value=st.session_state.get("email_comercial_globex", ""))
-
-    if st.button("💾 Salvar Configurações de E-mail"):
-        st.session_state["provedor"] = provedor
-        st.session_state["email_remetente"] = email_remetente
-        st.session_state["senha_remetente"] = senha_remetente
-        st.session_state["email_comercial_globex"] = email_comercial
-        st.success("Configurações salvas com sucesso no sistema!")
+            submitted = st.form_submit_button("💾 Salvar Contrato")
+            if submitted:
+                if not cliente or not num_contrato or not email_cliente:
+                    st.error("Por favor, preencha todos os
