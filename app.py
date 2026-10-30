@@ -44,6 +44,31 @@ def init_supabase():
 supabase = init_supabase()
 
 # ==========================================
+# CARREGAR CONFIGURAÇÕES DE E-MAIL DO SUPABASE
+# ==========================================
+def carregar_config_email():
+    if not supabase:
+        return {}
+    try:
+        res = supabase.table("config_email").select("*").eq("id", 1).execute()
+        if res.data:
+            return res.data[0]
+    except Exception:
+        pass
+    return {}
+
+config_db = carregar_config_email()
+
+if "provedor" not in st.session_state:
+    st.session_state["provedor"] = config_db.get("provedor", "Outlook / Office365")
+if "email_remetente" not in st.session_state:
+    st.session_state["email_remetente"] = config_db.get("email_remetente", "")
+if "senha_remetente" not in st.session_state:
+    st.session_state["senha_remetente"] = config_db.get("senha_remetente", "")
+if "email_comercial_globex" not in st.session_state:
+    st.session_state["email_comercial_globex"] = config_db.get("email_comercial_globex", "")
+
+# ==========================================
 # FUNÇÕES DE E-MAIL
 # ==========================================
 def enviar_email(provedor, email_remetente, senha, email_destino, assunto, mensagem):
@@ -73,7 +98,13 @@ def enviar_email(provedor, email_remetente, senha, email_destino, assunto, mensa
         return False, str(e)
 
 def executar_automacao_alertas():
-    if "email_remetente" not in st.session_state or not st.session_state["email_remetente"]:
+    # Garante que puxa do banco caso a session_state esteja vazia
+    remetente = st.session_state.get("email_remetente") or config_db.get("email_remetente")
+    senha = st.session_state.get("senha_remetente") or config_db.get("senha_remetente")
+    prov = st.session_state.get("provedor") or config_db.get("provedor", "Outlook / Office365")
+    comercial = st.session_state.get("email_comercial_globex") or config_db.get("email_comercial_globex")
+
+    if not remetente or not senha:
         return "Configure as credenciais de e-mail na aba Configurações de E-mail."
 
     if not supabase:
@@ -106,10 +137,10 @@ def executar_automacao_alertas():
                 corpo = f"Atenção Comercial Globex,\n\nExiste um contrato próximo ao período de renovação.\n\nCliente: {cliente}\nNº Contrato: {num_contrato}\nData de Vencimento: {data_fim_br}\nDias restantes: {dias_restantes}"
                 
                 sucesso, err = enviar_email(
-                    st.session_state["provedor"],
-                    st.session_state["email_remetente"],
-                    st.session_state["senha_remetente"],
-                    st.session_state["email_comercial_globex"],
+                    prov,
+                    remetente,
+                    senha,
+                    comercial,
                     assunto,
                     corpo
                 )
@@ -123,9 +154,9 @@ def executar_automacao_alertas():
                 corpo = f"Prezado(a) cliente {cliente},\n\nSeu contrato está chegando próximo à renovação. Aguarde contato da Globex.\n\nAtenciosamente,\nGlobex Multimodal"
                 
                 sucesso, err = enviar_email(
-                    st.session_state["provedor"],
-                    st.session_state["email_remetente"],
-                    st.session_state["senha_remetente"],
+                    prov,
+                    remetente,
+                    senha,
                     email_cliente,
                     assunto,
                     corpo
@@ -437,16 +468,34 @@ elif opcao == "Gestão de Contratos":
 # ------------------------------------------
 elif opcao == "Configurações de E-mail":
     st.header("⚙️ Configurações de E-mail")
-    st.write("Configure as credenciais para disparos automáticos.")
+    st.write("Configure as credenciais para disparos automáticos. Os dados agora ficam salvos de forma segura na nuvem.")
 
-    provedor = st.selectbox("Provedor", ["Outlook / Office365", "Gmail"])
+    provedor = st.selectbox("Provedor", ["Outlook / Office365", "Gmail"], index=0 if st.session_state.get("provedor") == "Outlook / Office365" else 1)
     email_remetente = st.text_input("E-mail Remetente", value=st.session_state.get("email_remetente", ""))
     senha_remetente = st.text_input("Senha / Senha de App", type="password", value=st.session_state.get("senha_remetente", ""))
     email_comercial = st.text_input("E-mail do Comercial Globex", value=st.session_state.get("email_comercial_globex", ""))
 
     if st.button("💾 Salvar Configurações"):
-        st.session_state["provedor"] = provedor
-        st.session_state["email_remetente"] = email_remetente
-        st.session_state["senha_remetente"] = senha_remetente
-        st.session_state["email_comercial_globex"] = email_comercial
-        st.success("Configurações salvas!")
+        if not email_remetente or not senha_remetente or not email_comercial:
+            st.error("Preencha todos os campos de e-mail.")
+        else:
+            try:
+                dados_config = {
+                    "id": 1,
+                    "provedor": provedor,
+                    "email_remetente": email_remetente,
+                    "senha_remetente": senha_remetente,
+                    "email_comercial_globex": email_comercial
+                }
+                # Salva ou atualiza no Supabase
+                supabase.table("config_email").upsert(dados_config).execute()
+                
+                # Atualiza na sessão local também
+                st.session_state["provedor"] = provedor
+                st.session_state["email_remetente"] = email_remetente
+                st.session_state["senha_remetente"] = senha_remetente
+                st.session_state["email_comercial_globex"] = email_comercial
+                
+                st.success("Configurações salvas com sucesso no Supabase!")
+            except Exception as e:
+                st.error(f"Erro ao salvar configurações no banco: {e}")
