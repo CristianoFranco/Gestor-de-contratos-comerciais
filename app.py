@@ -134,4 +134,53 @@ with st.sidebar:
 # ==========================================
 if opcao == "Cadastro de Contrato":
     st.header("📝 Gestão de Cadastros de Contratos")
-    st.write("Cadastre novos contratos ou gerencie os registos existentes
+    st.write("Cadastre novos contratos ou gerencie os registos existentes.")
+    
+    tab_cad, tab_edit = st.tabs(["➕ Novo Contrato", "✏️ Editar / Excluir Contrato"])
+    
+    with tab_cad:
+        st.subheader("Novo Contrato")
+        col1, col2 = st.columns(2)
+        with col1:
+            cliente = st.text_input("Nome do Cliente *", key="cad_cliente")
+            num_contrato = st.text_input("Número do Contrato *", key="cad_num")
+            data_inicio = st.date_input("Data de Início do Contrato", datetime.now(), key="cad_data_inicio")
+        
+        with col2:
+            email_cliente = st.text_input("E-mail do Cliente *", key="cad_email")
+            telefone_cliente = st.text_input("Telefone do Cliente *", key="cad_tel")
+            vigencia_meses = st.number_input("Vigência / Período do Reajuste (em Meses) *", min_value=1, value=12, step=1, key="cad_vigencia")
+
+        # Cálculo dinâmico e exato de meses
+        total_meses = int(vigencia_meses)
+        anos_extras = total_meses // 12
+        meses_extras = total_meses % 12
+        
+        ano_alvo = data_inicio.year + anos_extras + (data_inicio.month + meses_extras - 1) // 12
+        mes_alvo = (data_inicio.month + meses_extras - 1) % 12 + 1
+        dia_alvo = data_inicio.day
+        
+        ultimo_dia_mes_alvo = calendar.monthrange(ano_alvo, mes_alvo)[1]
+        if dia_alvo > ultimo_dia_mes_alvo:
+            dia_alvo = ultimo_dia_mes_alvo
+            
+        data_fim_calculada = datetime(ano_alvo, mes_alvo, dia_alvo).date()
+
+        st.info(f"📅 Previsão de Término / Renovação: {data_fim_calculada.strftime('%d/%m/%Y')}")
+
+        if st.button("💾 Salvar Contrato", key="btn_salvar_novo"):
+            if not cliente or not num_contrato or not email_cliente:
+                st.error("Por favor, preencha todos os campos obrigatórios (*).")
+            else:
+                try:
+                    with sqlite3.connect("contratos.db") as conn:
+                        c = conn.cursor()
+                        c.execute("INSERT INTO contratos (cliente, num_contrato, data_inicio, vigencia_meses, data_fim, email_cliente, telefone_cliente, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", (cliente, num_contrato, data_inicio, vigencia_meses, data_fim_calculada, email_cliente, telefone_cliente, "Ativo"))
+                        conn.commit()
+                    st.success("Contrato cadastrado com sucesso!")
+                except sqlite3.IntegrityError:
+                    st.error("Erro: Número de contrato já cadastrado.")
+                except Exception as e:
+                    st.error(f"Erro ao salvar: {e}")
+
+    with tab_edit:
