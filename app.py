@@ -34,7 +34,21 @@ def init_db():
     try:
         with sqlite3.connect("contratos.db") as conn:
             c = conn.cursor()
-            c.execute('CREATE TABLE IF NOT EXISTS contratos (id INTEGER PRIMARY KEY AUTOINCREMENT, cliente TEXT NOT NULL, num_contrato TEXT UNIQUE NOT NULL, data_inicio DATE NOT NULL, vigencia_meses INTEGER NOT NULL, data_fim DATE NOT NULL, email_cliente TEXT NOT NULL, telefone_cliente TEXT NOT NULL, status TEXT NOT NULL, alerta_45_enviado INTEGER DEFAULT 0, alerta_30_enviado INTEGER DEFAULT 0)')
+            c.execute('''
+                CREATE TABLE IF NOT EXISTS contratos (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    cliente TEXT NOT NULL,
+                    num_contrato TEXT UNIQUE NOT NULL,
+                    data_inicio DATE NOT NULL,
+                    vigencia_meses INTEGER NOT NULL,
+                    data_fim DATE NOT NULL,
+                    email_cliente TEXT NOT NULL,
+                    telefone_cliente TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    alerta_45_enviado INTEGER DEFAULT 0,
+                    alerta_30_enviado INTEGER DEFAULT 0
+                )
+            ''')
             conn.commit()
     except Exception as e:
         st.error(f"Erro ao inicializar a base de dados: {e}")
@@ -156,4 +170,15 @@ if opcao == "Cadastro de Contrato":
         st.subheader("Novo Contrato")
         col1, col2 = st.columns(2)
         with col1:
-            cliente = st.text_input("Nome do Cliente *", key
+            cliente = st.text_input(
+                "Nome do Cliente *", 
+                key="cad_cliente"
+            )
+            num_contrato = st.text_input(
+                "Número do Contrato *", 
+                key="cad_num"
+            )
+            data_inicio = st.date_input(
+                "Data de Início do Contrato", 
+                datetime.now(), 
+                key="cad_data_inicio"
