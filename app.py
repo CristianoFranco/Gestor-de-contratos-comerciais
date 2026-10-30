@@ -237,13 +237,13 @@ if opcao == "Cadastro de Contrato":
             
             col1, col2 = st.columns(2)
             with col1:
-                novo_cliente = st.text_input("Nome do Cliente *", value=c_data['cliente'], key="edit_cliente")
-                novo_num_contrato = st.text_input("Número do Contrato *", value=c_data['num_contrato'], key="edit_num")
-                data_inicio_edit = st.date_input("Data de Início", value=datetime.strptime(c_data['data_inicio'], "%Y-%m-%d").date(), key="edit_data")
+                novo_cliente = st.text_input("Nome do Cliente *", value=c_data['cliente'])
+                novo_num_contrato = st.text_input("Número do Contrato *", value=c_data['num_contrato'])
+                data_inicio_edit = st.date_input("Data de Início", value=datetime.strptime(c_data['data_inicio'], "%Y-%m-%d").date())
             with col2:
-                novo_email = st.text_input("E-mail do Cliente *", value=c_data['email_cliente'], key="edit_email")
-                novo_tel = st.text_input("Telefone do Cliente *", value=c_data['telefone_cliente'], key="edit_tel")
-                nova_vigencia = st.number_input("Vigência (Meses) *", min_value=1, value=int(c_data['vigencia_meses']), step=1, key="edit_vigencia")
+                novo_email = st.text_input("E-mail do Cliente *", value=c_data['email_cliente'])
+                novo_tel = st.text_input("Telefone do Cliente *", value=c_data['telefone_cliente'])
+                nova_vigencia = st.number_input("Vigência (Meses) *", min_value=1, value=int(c_data['vigencia_meses']), step=1)
             
             t_meses = int(nova_vigencia)
             a_extras = t_meses // 12
