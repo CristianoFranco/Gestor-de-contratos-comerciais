@@ -134,4 +134,152 @@ def executar_automacao_alertas():
                         corpo
                     )
                     if sucesso:
-                        c.execute("UPDATE contratos SET alerta_30_enviado =
+                        c.execute("UPDATE contratos SET alerta_30_enviado = 1, status = 'Informado ao cliente por email' WHERE id = ?", (cid,))
+                        disparos_30 += 1
+
+            conn.commit()
+        return f"Automação executada! Comercial: {disparos_45} | Cliente: {disparos_30}"
+    except Exception as e:
+        return f"Erro na automação: {e}"
+
+# ==========================================
+# BARRA LATERAL (SIDEBAR) COM LOGOTIPO
+# ==========================================
+with st.sidebar:
+    if os.path.exists("logo.png"):
+        st.image("logo.png", use_container_width=True)
+    else:
+        st.markdown("### 🌐 GLOBEX MULTIMODAL")
+    
+    st.markdown("---")
+    menu = ["Cadastro de Contrato", "Gestão de Contratos", "Configurações de E-mail"]
+    opcao = st.radio("Navegação", menu)
+    st.markdown("---")
+    st.caption("© 2026 Globex Multimodal")
+
+# ==========================================
+# TELA 01: CADASTRO, EDIÇÃO E EXCLUSÃO
+# ==========================================
+if opcao == "Cadastro de Contrato":
+    st.header("📝 Gestão de Cadastros de Contratos")
+    st.write("Cadastre novos contratos ou gerencie os registos existentes.")
+    
+    tab_cad, tab_edit = st.tabs(["➕ Novo Contrato", "✏️ Editar / Excluir Contrato"])
+    
+    with tab_cad:
+        st.subheader("Novo Contrato")
+        col1, col2 = st.columns(2)
+        with col1:
+            cliente = st.text_input("Nome do Cliente *", key="cad_cliente")
+            num_contrato = st.text_input("Número do Contrato *", key="cad_num")
+            data_inicio = st.date_input("Data de Início do Contrato", datetime.now(), key="cad_data_inicio")
+        
+        with col2:
+            email_cliente = st.text_input("E-mail do Cliente *", key="cad_email")
+            telefone_cliente = st.text_input("Telefone do Cliente *", key="cad_tel")
+            vigencia_meses = st.number_input("Vigência / Período do Reajuste (em Meses) *", min_value=1, value=12, step=1, key="cad_vigencia")
+
+        # Cálculo dinâmico e exato de meses
+        total_meses = int(vigencia_meses)
+        anos_extras = total_meses // 12
+        meses_extras = total_meses % 12
+        
+        ano_alvo = data_inicio.year + anos_extras + (data_inicio.month + meses_extras - 1) // 12
+        mes_alvo = (data_inicio.month + meses_extras - 1) % 12 + 1
+        dia_alvo = data_inicio.day
+        
+        ultimo_dia_mes_alvo = calendar.monthrange(ano_alvo, mes_alvo)[1]
+        if dia_alvo > ultimo_dia_mes_alvo:
+            dia_alvo = ultimo_dia_mes_alvo
+            
+        data_fim_calculada = datetime(ano_alvo, mes_alvo, dia_alvo).date()
+
+        st.info(f"📅 Previsão de Término / Renovação: {data_fim_calculada.strftime('%d/%m/%Y')}")
+
+        if st.button("💾 Salvar Contrato", key="btn_salvar_novo"):
+            if not cliente or not num_contrato or not email_cliente:
+                st.error("Por favor, preencha todos os campos obrigatórios (*).")
+            else:
+                try:
+                    with sqlite3.connect("contratos.db") as conn:
+                        c = conn.cursor()
+                        c.execute('''
+                            INSERT INTO contratos (cliente, num_contrato, data_inicio, vigencia_meses, data_fim, email_cliente, telefone_cliente, status)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        ''', (cliente, num_contrato, data_inicio, vigencia_meses, data_fim_calculada, email_cliente, telefone_cliente, "Ativo"))
+                        conn.commit()
+                    st.success("Contrato cadastrado com sucesso!")
+                except sqlite3.IntegrityError:
+                    st.error("Erro: Número de contrato já cadastrado.")
+                except Exception as e:
+                    st.error(f"Erro ao salvar: {e}")
+
+    with tab_edit:
+        df_edit = pd.DataFrame()
+        try:
+            with sqlite3.connect("contratos.db") as conn:
+                df_edit = pd.read_sql_query("SELECT * FROM contratos", conn)
+        except Exception as e:
+            st.error(f"Erro ao carregar contratos: {e}")
+        
+        if df_edit.empty:
+            st.info("Nenhum contrato cadastrado.")
+        else:
+            cid_edit = st.selectbox(
+                "Selecione o Contrato:",
+                df_edit['id'].tolist(),
+                format_func=lambda x: f"ID {x} - {df_edit[df_edit['id']==x]['cliente'].values[0]} ({df_edit[df_edit['id']==x]['num_contrato'].values[0]})"
+            )
+            
+            c_data = df_edit[df_edit['id'] == cid_edit].iloc[0]
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                novo_cliente = st.text_input("Nome do Cliente *", value=c_data['cliente'], key="edit_cliente")
+                novo_num_contrato = st.text_input("Número do Contrato *", value=c_data['num_contrato'], key="edit_num")
+                data_inicio_edit = st.date_input("Data de Início", value=datetime.strptime(c_data['data_inicio'], "%Y-%m-%d").date(), key="edit_data")
+            with col2:
+                novo_email = st.text_input("E-mail do Cliente *", value=c_data['email_cliente'], key="edit_email")
+                novo_tel = st.text_input("Telefone do Cliente *", value=c_data['telefone_cliente'], key="edit_tel")
+                nova_vigencia = st.number_input("Vigência (Meses) *", min_value=1, value=int(c_data['vigencia_meses']), step=1, key="edit_vigencia")
+            
+            t_meses = int(nova_vigencia)
+            a_extras = t_meses // 12
+            m_extras = t_meses % 12
+            a_alvo = data_inicio_edit.year + a_extras + (data_inicio_edit.month + m_extras - 1) // 12
+            m_alvo = (data_inicio_edit.month + m_extras - 1) % 12 + 1
+            d_alvo = data_inicio_edit.day
+            ultimo_d = calendar.monthrange(a_alvo, m_alvo)[1]
+            if d_alvo > ultimo_d:
+                d_alvo = ultimo_d
+            nova_data_fim = datetime(a_alvo, m_alvo, d_alvo).date()
+
+            st.info(f"📅 Nova Data Fim Recalculada: {nova_data_fim.strftime('%d/%m/%Y')}")
+            
+            if st.button("💾 Salvar Alterações", key="btn_salvar_edit"):
+                if not novo_cliente or not novo_num_contrato or not novo_email:
+                    st.error("Preencha todos os campos obrigatórios (*).")
+                else:
+                    try:
+                        with sqlite3.connect("contratos.db") as conn:
+                            cursor = conn.cursor()
+                            cursor.execute('''
+                                UPDATE contratos 
+                                SET cliente = ?, num_contrato = ?, data_inicio = ?, vigencia_meses = ?, data_fim = ?, email_cliente = ?, telefone_cliente = ?
+                                WHERE id = ?
+                            ''', (novo_cliente, novo_num_contrato, data_inicio_edit, nova_vigencia, nova_data_fim, novo_email, novo_tel, cid_edit))
+                            conn.commit()
+                        st.success("Atualizado com sucesso!")
+                        st.rerun()
+                    except sqlite3.IntegrityError:
+                        st.error("Erro: Número de contrato duplicado.")
+                    except Exception as e:
+                        st.error(f"Erro ao atualizar: {e}")
+
+            st.markdown("<br>", unsafe_allow_html=True)
+            st.markdown("---")
+            st.subheader("⚠️ Zona de Exclusão")
+            
+            if st.button("🗑️ Excluir Contrato Permanentemente", key="btn_excluir"):
+                try:
+                    with sqlite3.connect("contratos.
