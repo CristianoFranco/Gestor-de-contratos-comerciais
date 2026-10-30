@@ -180,3 +180,35 @@ if opcao == "Cadastro de Contrato":
                     st.error("Erro: Número de contrato já cadastrado.")
                 except Exception as e:
                     st.error(f"Erro ao salvar: {e}")
+
+    with tab_edit:
+        df_edit = pd.DataFrame()
+        try:
+            with sqlite3.connect("contratos.db") as conn:
+                df_edit = pd.read_sql_query("SELECT * FROM contratos", conn)
+        except Exception as e:
+            st.error(f"Erro ao carregar contratos: {e}")
+        
+        if df_edit.empty:
+            st.info("Nenhum contrato cadastrado.")
+        else:
+            cid_edit = st.selectbox(
+                "Selecione o Contrato:",
+                df_edit['id'].tolist(),
+                format_func=lambda x: f"ID {x} - {df_edit[df_edit['id']==x]['cliente'].values[0]} ({df_edit[df_edit['id']==x]['num_contrato'].values[0]})"
+            )
+            
+            c_data = df_edit[df_edit['id'] == cid_edit].iloc[0]
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                novo_cliente = st.text_input("Nome do Cliente *", value=c_data['cliente'], key="edit_cliente")
+                novo_num_contrato = st.text_input("Número do Contrato *", value=c_data['num_contrato'], key="edit_num")
+                data_inicio_edit = st.date_input("Data de Início", value=datetime.strptime(c_data['data_inicio'], "%Y-%m-%d").date(), key="edit_data")
+            with col2:
+                novo_email = st.text_input("E-mail do Cliente *", value=c_data['email_cliente'], key="edit_email")
+                novo_tel = st.text_input("Telefone do Cliente *", value=c_data['telefone_cliente'], key="edit_tel")
+                nova_vigencia = st.number_input("Vigência (Meses) *", min_value=1, value=int(c_data['vigencia_meses']), step=1, key="edit_vigencia")
+            
+            t_meses = int(nova_vigencia)
+            a_extras = t_mes
