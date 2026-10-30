@@ -33,21 +33,7 @@ st.markdown("""
 def init_db():
     conn = sqlite3.connect("contratos.db")
     c = conn.cursor()
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS contratos (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            cliente TEXT NOT NULL,
-            num_contrato TEXT UNIQUE NOT NULL,
-            data_inicio DATE NOT NULL,
-            vigencia_meses INTEGER NOT NULL,
-            data_fim DATE NOT NULL,
-            email_cliente TEXT NOT NULL,
-            telefone_cliente TEXT NOT NULL,
-            status TEXT NOT NULL,
-            alerta_45_enviado INTEGER DEFAULT 0,
-            alerta_30_enviado INTEGER DEFAULT 0
-        )
-    ''')
+    c.execute("CREATE TABLE IF NOT EXISTS contratos (id INTEGER PRIMARY KEY AUTOINCREMENT, cliente TEXT NOT NULL, num_contrato TEXT UNIQUE NOT NULL, data_inicio DATE NOT NULL, vigencia_meses INTEGER NOT NULL, data_fim DATE NOT NULL, email_cliente TEXT NOT NULL, telefone_cliente TEXT NOT NULL, status TEXT NOT NULL, alerta_45_enviado INTEGER DEFAULT 0, alerta_30_enviado INTEGER DEFAULT 0)")
     conn.commit()
     conn.close()
 
@@ -192,43 +178,4 @@ if opcao == "Cadastro de Contrato":
 
         st.info(f"📅 Previsão de Término / Renovação: {data_fim_calculada.strftime('%d/%m/%Y')}")
 
-        if st.button("💾 Salvar Contrato", key="btn_salvar_novo"):
-            if not cliente or not num_contrato or not email_cliente:
-                st.error("Por favor, preencha todos os campos obrigatórios (*).")
-            else:
-                conn = sqlite3.connect("contratos.db")
-                c = conn.cursor()
-                try:
-                    c.execute('''
-                        INSERT INTO contratos (cliente, num_contrato, data_inicio, vigencia_meses, data_fim, email_cliente, telefone_cliente, status)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    ''', (cliente, num_contrato, str(data_inicio), vigencia_meses, str(data_fim_calculada), email_cliente, telefone_cliente, "Ativo"))
-                    conn.commit()
-                    st.success("Contrato cadastrado com sucesso!")
-                except sqlite3.IntegrityError:
-                    st.error("Erro: Número de contrato já cadastrado.")
-                finally:
-                    conn.close()
-
-    with tab_edit:
-        conn = sqlite3.connect("contratos.db")
-        df_edit = pd.read_sql_query("SELECT * FROM contratos", conn)
-        conn.close()
-        
-        if df_edit.empty:
-            st.info("Nenhum contrato cadastrado.")
-        else:
-            cid_edit = st.selectbox(
-                "Selecione o Contrato:",
-                df_edit['id'].tolist(),
-                format_func=lambda x: f"ID {x} - {df_edit[df_edit['id']==x]['cliente'].values[0]} ({df_edit[df_edit['id']==x]['num_contrato'].values[0]})"
-            )
-            
-            c_data = df_edit[df_edit['id'] == cid_edit].iloc[0]
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                novo_cliente = st.text_input("Nome do Cliente *", value=c_data['cliente'], key="edit_cliente")
-                novo_num_contrato = st.text_input("Número do Contrato *", value=c_data['num_contrato'], key="edit_num")
-                data_inicio_edit = st.date_input("Data de Início", value=datetime.strptime(c_data['data_inicio'], "%Y-%m-%d").date(), key="edit_data")
-            with
+        if st.button("💾 Salvar Contrato", key="btn_salvar_
