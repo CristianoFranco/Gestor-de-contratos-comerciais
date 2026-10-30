@@ -21,37 +21,12 @@ st.set_page_config(
 # Azul Escuro/Petróleo: #0c3547 | Azul Ciano: #00b4d8 | Vermelho: #d90429 | Cinza Claro Fundo: #f8f9fa
 st.markdown("""
     <style>
-    .stApp {
-        background-color: #f8f9fa;
-    }
-    h1, h2, h3 {
-        color: #0c3547 !important;
-        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    }
-    .stButton>button {
-        background-color: #0c3547;
-        color: white;
-        border-radius: 8px;
-        border: none;
-        padding: 0.5rem 1rem;
-        font-weight: 600;
-        transition: 0.3s;
-    }
-    .stButton>button:hover {
-        background-color: #00b4d8;
-        color: #0c3547;
-    }
-    .metric-card {
-        background-color: white;
-        padding: 20px;
-        border-radius: 10px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
-        border-left: 5px solid #00b4d8;
-        text-align: center;
-    }
-    .metric-card-alert {
-        border-left: 5px solid #d90429;
-    }
+    .stApp { background-color: #f8f9fa; }
+    h1, h2, h3 { color: #0c3547 !important; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+    .stButton>button { background-color: #0c3547; color: white; border-radius: 8px; border: none; padding: 0.5rem 1rem; font-weight: 600; transition: 0.3s; }
+    .stButton>button:hover { background-color: #00b4d8; color: #0c3547; }
+    .metric-card { background-color: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); border-left: 5px solid #00b4d8; text-align: center; }
+    .metric-card-alert { border-left: 5px solid #d90429; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -90,7 +65,7 @@ def enviar_email(provedor, email_remetente, senha, email_destino, assunto, mensa
             smtp_server = "smtp.office365.com"
             port = 587
         else:
-            return False, "Provedor não suportado."
+            return False, "Provedor inválido."
 
         msg = MIMEMultipart()
         msg['From'] = email_remetente
@@ -109,7 +84,7 @@ def enviar_email(provedor, email_remetente, senha, email_destino, assunto, mensa
 
 def executar_automacao_alertas():
     if "email_remetente" not in st.session_state or not st.session_state["email_remetente"]:
-        return "Configure as credenciais de correio eletrónico na aba Configurações de E-mail para ativar a automação."
+        return "Configure as credenciais de e-mail na aba Configurações de E-mail."
 
     conn = sqlite3.connect("contratos.db")
     c = conn.cursor()
@@ -145,7 +120,7 @@ def executar_automacao_alertas():
         # 30 dias -> Cliente
         elif dias_restantes <= 30 and a30 == 0:
             assunto = f"Globex Multimodal - Renovação de Contrato Nº {num_contrato}"
-            corpo = f"Prezado(a) cliente {cliente},\n\nSeu contrato está chegando próximo à renovação. Aguarde que um executivo de vendas da Globex entrará em contato para renovação.\n\nAtenciosamente,\nGlobex Multimodal"
+            corpo = f"Prezado(a) cliente {cliente},\n\nSeu contrato está chegando próximo à renovação. Aguarde contato da Globex.\n\nAtenciosamente,\nGlobex Multimodal"
             
             sucesso, err = enviar_email(
                 st.session_state["provedor"],
@@ -161,7 +136,7 @@ def executar_automacao_alertas():
 
     conn.commit()
     conn.close()
-    return f"Automação executada! Avisos ao comercial: {disparos_45} | Avisos ao cliente: {disparos_30}"
+    return f"Automação executada! Comercial: {disparos_45} | Cliente: {disparos_30}"
 
 # ==========================================
 # BARRA LATERAL (SIDEBAR) COM LOGOTIPO
@@ -174,18 +149,18 @@ with st.sidebar:
     
     st.markdown("---")
     menu = ["Cadastro de Contrato", "Gestão de Contratos", "Configurações de E-mail"]
-    opcao = st.radio("Menu de Navegação", menu)
+    opcao = st.radio("Navegação", menu)
     st.markdown("---")
-    st.caption("© 2026 Globex Multimodal - Gestor Inteligente")
+    st.caption("© 2026 Globex Multimodal")
 
 # ==========================================
 # TELA 01: CADASTRO, EDIÇÃO E EXCLUSÃO
 # ==========================================
 if opcao == "Cadastro de Contrato":
     st.header("📝 Gestão de Cadastros de Contratos")
-    st.write("Cadastre novos contratos ou gerencie os registos já existentes.")
+    st.write("Cadastre novos contratos ou gerencie os registos existentes.")
     
-    tab_cad, tab_edit = st.tabs(["➕ Novo Contrato", "✏️ Editar / Excluir Contrato Existente"])
+    tab_cad, tab_edit = st.tabs(["➕ Novo Contrato", "✏️ Editar / Excluir Contrato"])
     
     with tab_cad:
         with st.form("form_cadastro", clear_on_submit=True):
@@ -193,31 +168,4 @@ if opcao == "Cadastro de Contrato":
             with col1:
                 cliente = st.text_input("Nome do Cliente *")
                 num_contrato = st.text_input("Número do Contrato *")
-                data_inicio = st.date_input("Data de Início do Contrato", datetime.now(), key="cad_data_inicio")
-            
-            with col2:
-                vigencia_meses = st.number_input("Vigência / Período do Reajuste (em Meses) *", min_value=1, value=12, step=1, key="cad_vigencia")
-                email_cliente = st.text_input("E-mail do Cliente *")
-                telefone_cliente = st.text_input("Telefone do Cliente *")
-
-            # Cálculo dinâmico e exato de meses
-            total_meses = int(vigencia_meses)
-            anos_extras = total_meses // 12
-            meses_extras = total_meses % 12
-            
-            ano_alvo = data_inicio.year + anos_extras + (data_inicio.month + meses_extras - 1) // 12
-            mes_alvo = (data_inicio.month + meses_extras - 1) % 12 + 1
-            dia_alvo = data_inicio.day
-            
-            ultimo_dia_mes_alvo = calendar.monthrange(ano_alvo, mes_alvo)[1]
-            if dia_alvo > ultimo_dia_mes_alvo:
-                dia_alvo = ultimo_dia_mes_alvo
-                
-            data_fim_calculada = datetime(ano_alvo, mes_alvo, dia_alvo).date()
-
-            st.info(f"📅 Previsão de Término / Renovação: {data_fim_calculada.strftime('%d/%m/%Y')}")
-
-            submitted = st.form_submit_button("💾 Salvar Contrato")
-            if submitted:
-                if not cliente or not num_contrato or not email_cliente:
-                    st.error("Por favor, preencha todos os
+                data_inicio = st.date_input("Data de Início", datetime.now(), key="cad_data_
