@@ -191,7 +191,7 @@ def executar():
                     lista_contratos,
                     format_func=lambda c: f"Proposta Nº {c['num_contrato']} - {c['cliente']}"
                 )
-                # Puxa estritamente o número da proposta/contrato (num_contrato) do Gestor de Contratos
+                # Guarda estritamente o número da proposta/contrato (num_contrato)
                 numero_proposta = str(contrato_escolhido['num_contrato'])
                 cliente_nome = contrato_escolhido['cliente']
                 email_cobranca = contrato_escolhido['email_cliente']
@@ -276,7 +276,15 @@ def executar():
         if df.empty:
             st.info("Nenhum faturamento ativo no momento.")
         else:
-            st.subheader("📋 Faturas e Prazos Ativos")
+            # Dicionário de mapeamento: busca o número real do contrato na tabela 'contratos' pelo ID ou valor
+            try:
+                res_cont = supabase.table("contratos").select("id, num_contrato").execute()
+                map_contratos = {str(c['id']): str(c['num_contrato']) for c in res_cont.data}
+            except Exception:
+                map_contratos = {}
+
+            # Substitui automaticamente caso o registo antigo contenha o ID em vez do número do contrato
+            df['id_contrato_real'] = df['id_contrato'].apply(lambda x: map_contratos.get(str(x), str(x)))
 
             previsoes = []
             for _, row in df.iterrows():
@@ -289,8 +297,10 @@ def executar():
             
             df['previsao_faturamento'] = previsoes
 
-            # Exibe os dados recolhendo corretamente o número da proposta/contrato
-            display_df = df[['id_contrato', 'cliente', 'condicao', 'inicio_periodo', 'previsao_faturamento', 'status']].copy()
+            st.subheader("📋 Faturas e Prazos Ativos")
+
+            # Exibe utilizando a coluna tratada com o número real da proposta
+            display_df = df[['id_contrato_real', 'cliente', 'condicao', 'inicio_periodo', 'previsao_faturamento', 'status']].copy()
             display_df['inicio_periodo'] = pd.to_datetime(display_df['inicio_periodo']).dt.strftime('%d/%m/%Y')
             
             display_df.columns = [
@@ -311,7 +321,7 @@ def executar():
             reg_id = st.selectbox(
                 "Selecionar Registo para Encerrar:",
                 df['id'].tolist(),
-                format_func=lambda x: f"Cliente: {df[df['id']==x]['cliente'].values[0]} (Proposta: {df[df['id']==x]['id_contrato'].values[0]})"
+                format_func=lambda x: f"Cliente: {df[df['id']==x]['cliente'].values[0]} (Proposta: {df[df['id']==x]['id_contrato_real'].values[0]})"
             )
 
             cliente_selecionado = df[df['id'] == reg_id]['cliente'].values[0]
