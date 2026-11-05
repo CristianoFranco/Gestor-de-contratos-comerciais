@@ -72,7 +72,6 @@ def executar():
         except Exception as e:
             return False, str(e)
 
-    # Função auxiliar para verificar e ajustar dias úteis (considerando sábados e domingos)
     def ajustar_dia_util(data_obj, direcao="retroceder"):
         while data_obj.weekday() >= 5:  # Sábado (5) ou Domingo (6)
             if direcao == "retroceder":
@@ -81,7 +80,6 @@ def executar():
                 data_obj += timedelta(days=1)
         return data_obj
 
-    # Função central de cálculo da Previsão de Faturamento
     def calcular_previsao_faturamento(condicao, inicio_dt, dia_fixo=10):
         if isinstance(inicio_dt, str):
             inicio_dt = datetime.strptime(inicio_dt, "%Y-%m-%d").date()
@@ -174,7 +172,7 @@ def executar():
 
         origem_dados = st.radio("Origem do Cliente:", ["Importar do Gestor de Contratos", "Cadastro Manual (Avulso)"])
 
-        identificador_id = ""
+        numero_proposta = ""
         cliente_nome = ""
         email_cobranca = ""
 
@@ -191,15 +189,15 @@ def executar():
                 contrato_escolhido = st.selectbox(
                     "Selecione o Contrato:",
                     lista_contratos,
-                    format_func=lambda c: f"ID {c['id']} - {c['cliente']} (Nº {c['num_contrato']})"
+                    format_func=lambda c: f"Contrato Nº {c['num_contrato']} - {c['cliente']}"
                 )
-                identificador_id = str(contrato_escolhido['id'])
+                numero_proposta = str(contrato_escolhido['num_contrato'])
                 cliente_nome = contrato_escolhido['cliente']
                 email_cobranca = contrato_escolhido['email_cliente']
         else:
             col_m1, col_m2 = st.columns(2)
             with col_m1:
-                identificador_id = st.text_input("ID / Código de Referência *", placeholder="Ex: MAN-001")
+                numero_proposta = st.text_input("Número da Proposta / Contrato *", placeholder="Ex: PROP-2026-01")
                 cliente_nome = st.text_input("Nome do Cliente *", placeholder="Nome da Empresa")
             with col_m2:
                 email_cobranca = st.text_input("E-mail para Alertas/Cobrança *", placeholder="operacional@cliente.com.br")
@@ -227,17 +225,16 @@ def executar():
         with col_c2:
             inicio_periodo = st.date_input("Início do Período de Faturamento *", datetime.now())
 
-        # Exibição prévia da data calculada ao cadastrar
         data_prevista_preview = calcular_previsao_faturamento(condicao, inicio_periodo, dia_fixo)
         st.info(f"📅 Previsão de Faturamento Calculada: **{data_prevista_preview.strftime('%d/%m/%Y')}**")
 
         if st.button("💾 Salvar Regra de Faturamento", key="btn_salvar_fat"):
-            if not cliente_nome or not identificador_id or not email_cobranca:
+            if not cliente_nome or not numero_proposta or not email_cobranca:
                 st.error("Por favor, preencha todos os campos obrigatórios.")
             else:
                 try:
                     novo_reg = {
-                        "id_contrato": identificador_id,
+                        "id_contrato": numero_proposta,
                         "cliente": cliente_nome,
                         "condicao": condicao,
                         "dia_fixo": dia_fixo,
@@ -249,7 +246,7 @@ def executar():
                     supabase.table("faturamentos").insert(novo_reg).execute()
                     st.success("Regra de faturamento guardada com sucesso!")
                 except Exception as e:
-                    st.error(f"Erro ao salvar no Supabase (verifique se o RLS está desativado): {e}")
+                    st.error(f"Erro ao salvar no Supabase: {e}")
 
     # Tela 2: Painel de Faturamentos Ativos
     elif opcao == "Painel de Faturamentos Ativos":
@@ -280,7 +277,6 @@ def executar():
         else:
             st.subheader("📋 Faturas e Prazos Ativos")
 
-            # Cálculo dinâmico da coluna 'Previsão de Faturamento'
             previsoes = []
             for _, row in df.iterrows():
                 dt_prev = calcular_previsao_faturamento(
@@ -292,13 +288,12 @@ def executar():
             
             df['previsao_faturamento'] = previsoes
 
-            # Formatação e ordenação das colunas da tabela
-            display_df = df[['id', 'id_contrato', 'cliente', 'condicao', 'inicio_periodo', 'previsao_faturamento', 'status']].copy()
+            # Seleciona apenas as colunas desejadas (sem IDs internos) e esconde o índice do pandas
+            display_df = df[['id_contrato', 'cliente', 'condicao', 'inicio_periodo', 'previsao_faturamento', 'status']].copy()
             display_df['inicio_periodo'] = pd.to_datetime(display_df['inicio_periodo']).dt.strftime('%d/%m/%Y')
             
             display_df.columns = [
-                'ID Registo', 
-                'Ref. Contrato', 
+                'Número da Proposta', 
                 'Cliente', 
                 'Condição', 
                 'Início Período', 
@@ -306,7 +301,8 @@ def executar():
                 'Status'
             ]
             
-            st.dataframe(display_df, use_container_width=True)
+            # hide_index=True oculta a coluna de índice do Pandas e a exclusão da coluna 'id' oculta o ID Registo
+            st.dataframe(display_df, use_container_width=True, hide_index=True)
 
             st.divider()
             st.subheader("🔴 Gestão de Encerramento (Fim de Contrato)")
@@ -315,7 +311,7 @@ def executar():
             reg_id = st.selectbox(
                 "Selecionar Registo para Encerrar:",
                 df['id'].tolist(),
-                format_func=lambda x: f"ID {x} - {df[df['id']==x]['cliente'].values[0]} (Ref: {df[df['id']==x]['id_contrato'].values[0]})"
+                format_func=lambda x: f"Cliente: {df[df['id']==x]['cliente'].values[0]} (Proposta: {df[df['id']==x]['id_contrato'].values[0]})"
             )
 
             cliente_selecionado = df[df['id'] == reg_id]['cliente'].values[0]
