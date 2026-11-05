@@ -85,7 +85,6 @@ def executar():
 
             server.quit()
 
-            # Regista no log do Supabase se pelo menos um e-mail foi enviado com sucesso
             if sucessos > 0:
                 try:
                     log_data = {
@@ -221,10 +220,10 @@ def executar():
     # Tela 1: Novo ou Editar Faturamento
     if opcao == "Novo / Editar Faturamento":
         st.markdown("<h1 style='text-align: center; color: #0c3547;'>📝 Gestão de Regras de Faturamento</h1>", unsafe_allow_html=True)
-        st.markdown("<p style='text-align: center; color: #666;'>Cadastre novos faturamentos ou edite lançamentos existentes.</p>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align: center; color: #666;'>Cadastre novos faturamentos (via Contratos ou Manual Avulso) ou edite lançamentos existentes.</p>", unsafe_allow_html=True)
         st.markdown("<br>", unsafe_allow_html=True)
 
-        modo = st.radio("Modo de Operação:", ["Novo Faturamento", "Editar Faturamento Existente"], horizontal=True)
+        modo = st.radio("Modo de Operação:", ["Novo Faturamento", "Cadastro Manual (Avulso)", "Editar Faturamento Existente"], horizontal=True)
         st.markdown("<br>", unsafe_allow_html=True)
 
         if modo == "Novo Faturamento":
@@ -248,9 +247,9 @@ def executar():
             ]
 
             if not lista_contratos:
-                st.warning("⚠️ Nenhum contrato encontrado na base de dados. Por favor, cadastre primeiro um contrato no 'Gestor de Contratos'.")
+                st.warning("⚠️ Nenhum contrato encontrado na base de dados. Utilize o 'Cadastro Manual (Avulso)' ao lado.")
             elif not contratos_disponiveis:
-                st.info("💡 Todos os contratos já possuem (ou já tiveram) faturamento configurado. Contratos encerrados não retornam para nova seleção.")
+                st.info("💡 Todos os contratos já possuem (ou já tiveram) faturamento configurado. Utilize o 'Cadastro Manual (Avulso)' para novos lançamentos.")
             else:
                 contrato_escolhido = st.selectbox(
                     "Selecione o Contrato *",
@@ -306,7 +305,67 @@ def executar():
                     except Exception as e:
                         st.error(f"Erro ao salvar no Supabase: {e}")
 
-        else:
+        elif modo == "Cadastro Manual (Avulso)":
+            st.markdown("### ✍️ Inserção Manual de Contrato / Proposta")
+            st.markdown("<p style='color: #666;'>Preencha os campos abaixo livremente. Este registo ficará exclusivo no Gestor de Faturamentos.</p>", unsafe_allow_html=True)
+            st.markdown("<br>", unsafe_allow_html=True)
+
+            col_m1, col_m2 = st.columns(2)
+            with col_m1:
+                numero_proposta = st.text_input("Número da Proposta / Contrato *", placeholder="Ex: PROP-2026-99")
+                cliente_nome = st.text_input("Nome do Cliente *", placeholder="Nome da Empresa")
+            with col_m2:
+                email_cobranca = st.text_input("E-mail para Alertas/Cobrança *", placeholder="financeiro@cliente.com.br")
+
+            st.markdown("<br>", unsafe_allow_html=True)
+            st.subheader("⚙️ Regras e Condições")
+
+            col_c1, col_c2 = st.columns(2)
+            with col_c1:
+                condicao_man = st.selectbox(
+                    "Condição de Faturamento *",
+                    [
+                        "30 dias após inicio",
+                        "Data Fixa",
+                        "Penúltimo dia do mês",
+                        "Fim do mês",
+                        "1º dia útil do mês"
+                    ],
+                    key="cond_man"
+                )
+                
+                dia_fixo_man = 10
+                if condicao_man == "Data Fixa":
+                    dia_fixo_man = st.number_input("Dia do mês para faturar:", min_value=1, max_value=31, value=10, key="dia_fixo_man")
+
+            with col_c2:
+                inicio_periodo_man = st.date_input("Início do Período de Faturamento *", datetime.now(), key="inicio_man")
+
+            data_prevista_preview_man = calcular_previsao_faturamento(condicao_man, inicio_periodo_man, dia_fixo_man)
+            st.info(f"📅 Previsão de Faturamento Calculada: **{data_prevista_preview_man.strftime('%d/%m/%Y')}**")
+
+            if st.button("💾 Salvar Regra de Faturamento Manual", key="btn_salvar_fat_manual"):
+                if not numero_proposta or not cliente_nome or not email_cobranca:
+                    st.error("Por favor, preencha todos os campos obrigatórios (*).")
+                else:
+                    try:
+                        novo_reg_manual = {
+                            "id_contrato": str(numero_proposta),
+                            "cliente": cliente_nome,
+                            "condicao": condicao_man,
+                            "dia_fixo": dia_fixo_man,
+                            "inicio_periodo": str(inicio_periodo_man),
+                            "email_cliente": email_cobranca,
+                            "status": "Ativo",
+                            "alerta_enviado": 0
+                        }
+                        supabase.table("faturamentos").insert(novo_reg_manual).execute()
+                        st.success(f"Regra manual para '{cliente_nome}' guardada com sucesso na Gestão de Faturamentos!")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Erro ao salvar no Supabase: {e}")
+
+        else:  # Modo Editar Faturamento Existente
             df_ativos = pd.DataFrame()
             try:
                 res_ativos = supabase.table("faturamentos").select("*").eq("status", "Ativo").execute()
@@ -514,7 +573,6 @@ def executar():
         if df_logs.empty:
             st.info("Nenhum log de mensagem registado até ao momento.")
         else:
-            # Reorganiza colunas para exibição amigável
             display_logs = df_logs[['data_envio', 'cliente', 'proposta', 'status', 'mensagem']].copy()
             display_logs.columns = ['Data / Hora do Envio', 'Cliente', 'Proposta Nº', 'Status do Envio', 'Mensagem Enviada']
             
