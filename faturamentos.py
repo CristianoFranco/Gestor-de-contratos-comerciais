@@ -72,15 +72,41 @@ def executar():
         except Exception as e:
             return False, str(e)
 
-    # Função auxiliar para verificar dias úteis (considerando sábados e domingos)
+    # Função auxiliar para verificar e ajustar dias úteis (considerando sábados e domingos)
     def ajustar_dia_util(data_obj, direcao="retroceder"):
-        # direcao: 'retroceder' (para trás em feriados/fins de semana) ou 'avancar' (para frente)
-        while data_obj.weekday() >= 5: # Sábado (5) ou Domingo (6)
+        while data_obj.weekday() >= 5:  # Sábado (5) ou Domingo (6)
             if direcao == "retroceder":
                 data_obj -= timedelta(days=1)
             else:
                 data_obj += timedelta(days=1)
         return data_obj
+
+    # Função central de cálculo da Previsão de Faturamento
+    def calcular_previsao_faturamento(condicao, inicio_dt, dia_fixo=10):
+        if isinstance(inicio_dt, str):
+            inicio_dt = datetime.strptime(inicio_dt, "%Y-%m-%d").date()
+
+        if condicao == "30 dias após inicio":
+            data_fatura = inicio_dt + timedelta(days=30)
+            data_fatura = ajustar_dia_util(data_fatura, "avancar")
+        elif condicao == "Data Fixa":
+            d_fixo = min(int(dia_fixo), calendar.monthrange(inicio_dt.year, inicio_dt.month)[1])
+            data_fatura = datetime(inicio_dt.year, inicio_dt.month, d_fixo).date()
+            data_fatura = ajustar_dia_util(data_fatura, "retroceder")
+        elif condicao == "Penúltimo dia do mês":
+            ultimo_dia = calendar.monthrange(inicio_dt.year, inicio_dt.month)[1]
+            data_fatura = datetime(inicio_dt.year, inicio_dt.month, ultimo_dia - 1).date()
+            data_fatura = ajustar_dia_util(data_fatura, "retroceder")
+        elif condicao == "Fim do mês":
+            ultimo_dia = calendar.monthrange(inicio_dt.year, inicio_dt.month)[1]
+            data_fatura = datetime(inicio_dt.year, inicio_dt.month, ultimo_dia).date()
+            data_fatura = ajustar_dia_util(data_fatura, "retroceder")
+        elif condicao == "1º dia útil do mês":
+            data_fatura = datetime(inicio_dt.year, inicio_dt.month, 1).date()
+            data_fatura = ajustar_dia_util(data_fatura, "avancar")
+        else:
+            data_fatura = inicio_dt
+        return data_fatura
 
     def executar_automacao_faturamentos():
         remetente = config_db.get("email_remetente")
@@ -104,33 +130,11 @@ def executar():
                 inicio_str = item['inicio_periodo']
                 email_cliente = item['email_cliente']
                 alerta_enviado = item.get('alerta_enviado', 0)
+                dia_fixo = item.get('dia_fixo', 10)
 
                 inicio_dt = datetime.strptime(inicio_str, "%Y-%m-%d").date()
+                data_fatura = calcular_previsao_faturamento(condicao, inicio_dt, dia_fixo)
 
-                # Cálculo da Data de Faturamento com base na condição
-                if condicao == "30 dias após inicio":
-                    data_fatura = inicio_dt + timedelta(days=30)
-                    data_fatura = ajustar_dia_util(data_fatura, "avancar")
-                elif condicao == "Data Fixa":
-                    # Considera o dia fixo no mês atual ou seguinte
-                    dia_fixo = min(item.get('dia_fixo', 10), calendar.monthrange(inicio_dt.year, inicio_dt.month)[1])
-                    data_fatura = datetime(inicio_dt.year, inicio_dt.month, dia_fixo).date()
-                    data_fatura = ajustar_dia_util(data_fatura, "retroceder")
-                elif condicao == "Penúltimo dia do mês":
-                    ultimo_dia = calendar.monthrange(inicio_dt.year, inicio_dt.month)[1]
-                    data_fatura = datetime(inicio_dt.year, inicio_dt.month, ultimo_dia - 1).date()
-                    data_fatura = ajustar_dia_util(data_fatura, "retroceder")
-                elif condicao == "Fim do mês":
-                    ultimo_dia = calendar.monthrange(inicio_dt.year, inicio_dt.month)[1]
-                    data_fatura = datetime(inicio_dt.year, inicio_dt.month, ultimo_dia).date()
-                    data_fatura = ajustar_dia_util(data_fatura, "retroceder")
-                elif condicao == "1º dia útil do mês":
-                    data_fatura = datetime(inicio_dt.year, inicio_dt.month, 1).date()
-                    data_fatura = ajustar_dia_util(data_fatura, "avancar")
-                else:
-                    data_fatura = inicio_dt
-
-                # Regra de alerta: 2 dias antes e 1 dia antes da data de preparação
                 dias_restantes = (data_fatura - hoje).days
 
                 if dias_restantes in [2, 1] and alerta_enviado < 2:
@@ -223,6 +227,10 @@ def executar():
         with col_c2:
             inicio_periodo = st.date_input("Início do Período de Faturamento *", datetime.now())
 
+        # Exibição prévia da data calculada ao cadastrar
+        data_prevista_preview = calcular_previsao_faturamento(condicao, inicio_periodo, dia_fixo)
+        st.info(f"📅 Previsão de Faturamento Calculada: **{data_prevista_preview.strftime('%d/%m/%Y')}**")
+
         if st.button("💾 Salvar Regra de Faturamento", key="btn_salvar_fat"):
             if not cliente_nome or not identificador_id or not email_cobranca:
                 st.error("Por favor, preencha todos os campos obrigatórios.")
@@ -241,9 +249,9 @@ def executar():
                     supabase.table("faturamentos").insert(novo_reg).execute()
                     st.success("Regra de faturamento guardada com sucesso!")
                 except Exception as e:
-                    st.error(f"Erro ao salvar no Supabase (verifique se a tabela 'faturamentos' existe): {e}")
+                    st.error(f"Erro ao salvar no Supabase (verifique se o RLS está desativado): {e}")
 
-    # Tela 2: Painel de Faturamentos Ativos e Fim de Contrato
+    # Tela 2: Painel de Faturamentos Ativos
     elif opcao == "Painel de Faturamentos Ativos":
         st.markdown("<h1 style='text-align: center; color: #0c3547;'>💰 Painel de Faturamentos Ativos</h1>", unsafe_allow_html=True)
         st.markdown("<p style='text-align: center; color: #666;'>Acompanhe os prazos de preparação e encerre contratos quando necessário.</p>", unsafe_allow_html=True)
@@ -271,10 +279,33 @@ def executar():
             st.info("Nenhum faturamento ativo no momento.")
         else:
             st.subheader("📋 Faturas e Prazos Ativos")
+
+            # Cálculo dinâmico da coluna 'Previsão de Faturamento'
+            previsoes = []
+            for _, row in df.iterrows():
+                dt_prev = calcular_previsao_faturamento(
+                    row['condicao'], 
+                    row['inicio_periodo'], 
+                    row.get('dia_fixo', 10)
+                )
+                previsoes.append(dt_prev.strftime('%d/%m/%Y'))
             
-            # Exibição limpa na tabela
-            display_df = df[['id', 'id_contrato', 'cliente', 'condicao', 'inicio_periodo', 'status']].copy()
-            display_df.columns = ['ID Registo', 'Ref. Contrato', 'Cliente', 'Condição', 'Início Período', 'Status']
+            df['previsao_faturamento'] = previsoes
+
+            # Formatação e ordenação das colunas da tabela
+            display_df = df[['id', 'id_contrato', 'cliente', 'condicao', 'inicio_periodo', 'previsao_faturamento', 'status']].copy()
+            display_df['inicio_periodo'] = pd.to_datetime(display_df['inicio_periodo']).dt.strftime('%d/%m/%Y')
+            
+            display_df.columns = [
+                'ID Registo', 
+                'Ref. Contrato', 
+                'Cliente', 
+                'Condição', 
+                'Início Período', 
+                'Previsão de Faturamento', 
+                'Status'
+            ]
+            
             st.dataframe(display_df, use_container_width=True)
 
             st.divider()
@@ -292,7 +323,7 @@ def executar():
             if st.button(f"🛑 Declarar Fim de Contrato / Encerrar ({cliente_selecionado})"):
                 try:
                     supabase.table("faturamentos").update({"status": "Finalizado"}).eq("id", reg_id).execute()
-                    st.success(f"Contrato/Faturamento de '{cliente_selecionado}' encerrado com sucesso! Já não será contabilizado.")
+                    st.success(f"Contrato/Faturamento de '{cliente_selecionado}' encerrado com sucesso!")
                     st.rerun()
                 except Exception as e:
                     st.error(f"Erro ao encerrar: {e}")
