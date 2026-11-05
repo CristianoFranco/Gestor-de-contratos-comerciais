@@ -41,6 +41,16 @@ def executar():
 
     config_db = carregar_config_email_faturamento()
 
+    # Inicializar session_state para as configurações de e-mail
+    if "fat_provedor" not in st.session_state:
+        st.session_state["fat_provedor"] = config_db.get("provedor", "Outlook / Office365")
+    if "fat_email_remetente" not in st.session_state:
+        st.session_state["fat_email_remetente"] = config_db.get("email_remetente", "")
+    if "fat_senha_remetente" not in st.session_state:
+        st.session_state["fat_senha_remetente"] = config_db.get("senha_remetente", "")
+    if "fat_emails_destino" not in st.session_state:
+        st.session_state["fat_emails_destino"] = config_db.get("emails_destino", "")
+
     def enviar_email_para_todos(provedor, email_remetente, senha, lista_destinos, assunto, mensagem):
         sucessos = 0
         erros = []
@@ -115,10 +125,10 @@ def executar():
         return data_fatura
 
     def executar_automacao_faturamentos():
-        remetente = config_db.get("email_remetente")
-        senha = config_db.get("senha_remetente")
-        prov = config_db.get("provedor", "Outlook / Office365")
-        destinos_str = config_db.get("emails_destino", "")
+        remetente = st.session_state.get("fat_email_remetente") or config_db.get("email_remetente")
+        senha = st.session_state.get("fat_senha_remetente") or config_db.get("senha_remetente")
+        prov = st.session_state.get("fat_provedor") or config_db.get("provedor", "Outlook / Office365")
+        destinos_str = st.session_state.get("fat_emails_destino") or config_db.get("emails_destino", "")
 
         if not remetente or not senha or not destinos_str:
             return "Configure as credenciais e os e-mails de destino na aba 'Configurações de E-mail'."
@@ -189,7 +199,6 @@ def executar():
         except Exception:
             lista_contratos = []
 
-        # Busca propostas que já possuem faturamento ativo para ocultar da lista
         propostas_já_cadastradas = []
         try:
             res_fat_ativos = supabase.table("faturamentos").select("id_contrato").eq("status", "Ativo").execute()
@@ -198,7 +207,6 @@ def executar():
         except Exception:
             pass
 
-        # Filtra rigorosamente para ocultar os contratos já inseridos
         contratos_disponiveis = [
             c for c in lista_contratos 
             if str(c['num_contrato']) not in propostas_já_cadastradas and str(c['id']) not in propostas_já_cadastradas
@@ -265,7 +273,7 @@ def executar():
                         st.success("Regra de faturamento guardada com sucesso! O contrato foi ocultado da lista de novos cadastros.")
                         st.rerun()
                 except Exception as e:
-                    st.error(f"Erro ao salvar no Supabase (verifique se a tabela 'faturamentos' existe e o RLS está desativado): {e}")
+                    st.error(f"Erro ao salvar no Supabase: {e}")
 
     # Tela 2: Painel de Faturamentos Ativos
     elif opcao == "Painel de Faturamentos Ativos":
@@ -356,28 +364,35 @@ def executar():
         st.markdown("<p style='text-align: center; color: #666;'>Configure as credenciais SMTP e cadastre vários e-mails para receber as notificações operacionais.</p>", unsafe_allow_html=True)
         st.markdown("<br>", unsafe_allow_html=True)
 
-        provedor = st.selectbox("Provedor SMTP", ["Outlook / Office365", "Gmail"], index=0 if config_db.get("provedor") == "Outlook / Office365" else 1)
-        email_remetente = st.text_input("E-mail Remetente", value=config_db.get("email_remetente", ""))
-        senha_remetente = st.text_input("Senha / Senha de App do Remetente", type="password", value=config_db.get("senha_remetente", ""))
+        provedor = st.selectbox("Provedor SMTP", ["Outlook / Office365", "Gmail"], index=0 if st.session_state["fat_provedor"] == "Outlook / Office365" else 1, key="sel_fat_prov")
+        email_remetente = st.text_input("E-mail Remetente", value=st.session_state["fat_email_remetente"], key="inp_fat_rem")
+        senha_remetente = st.text_input("Senha / Senha de App do Remetente", type="password", value=st.session_state["fat_senha_remetente"], key="inp_fat_sen")
         
         emails_destino = st.text_area(
             "E-mails de Destino (Notificações Operacionais)", 
-            value=config_db.get("emails_destino", ""),
-            placeholder="Ex: operacional1@globex.com.br, operacional2@globex.com.br, gerente@globex.com.br"
+            value=st.session_state["fat_emails_destino"],
+            placeholder="Ex: operacional1@globex.com.br, operacional2@globex.com.br, gerente@globex.com.br",
+            key="area_fat_dest"
         )
         st.caption("ℹ️ Pode inserir múltiplos endereços de e-mail separando-os por vírgula (`,`) ou ponto e vírgula (`;`).")
 
         if st.button("💾 Salvar Configurações de Faturamento"):
-            if not email_remetente or not senha_remetente or not emails_destino:
+            # Atualiza o session_state com os valores correntes dos widgets
+            st.session_state["fat_provedor"] = st.session_state["sel_fat_prov"]
+            st.session_state["fat_email_remetente"] = st.session_state["inp_fat_rem"]
+            st.session_state["fat_senha_remetente"] = st.session_state["inp_fat_sen"]
+            st.session_state["fat_emails_destino"] = st.session_state["area_fat_dest"]
+
+            if not st.session_state["fat_email_remetente"] or not st.session_state["fat_senha_remetente"] or not st.session_state["fat_emails_destino"]:
                 st.error("Por favor, preencha todos os campos de e-mail.")
             else:
                 try:
                     dados_cfg = {
                         "id": 1,
-                        "provedor": provedor,
-                        "email_remetente": email_remetente,
-                        "senha_remetente": senha_remetente,
-                        "emails_destino": emails_destino
+                        "provedor": st.session_state["fat_provedor"],
+                        "email_remetente": st.session_state["fat_email_remetente"],
+                        "senha_remetente": st.session_state["fat_senha_remetente"],
+                        "emails_destino": st.session_state["fat_emails_destino"]
                     }
                     supabase.table("config_email_faturamento").upsert(dados_cfg).execute()
                     st.success("Configurações de e-mail guardadas com sucesso no Supabase!")
