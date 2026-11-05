@@ -259,7 +259,7 @@ def executar():
                 
                 numero_proposta = str(contrato_escolhido['num_contrato'])
                 cliente_nome = contrato_escolhido['cliente']
-                email_cobranca = contrato_escolhido['email_cliente']
+                email_cobranca = contrato_escolhido.get('email_cliente', '')
 
                 st.markdown("<br>", unsafe_allow_html=True)
                 st.subheader("⚙️ Regras e Condições")
@@ -313,9 +313,8 @@ def executar():
             col_m1, col_m2 = st.columns(2)
             with col_m1:
                 numero_proposta = st.text_input("Número da Proposta / Contrato *", placeholder="Ex: PROP-2026-99")
-                cliente_nome = st.text_input("Nome do Cliente *", placeholder="Nome da Empresa")
             with col_m2:
-                email_cobranca = st.text_input("E-mail para Alertas/Cobrança *", placeholder="financeiro@cliente.com.br")
+                cliente_nome = st.text_input("Nome do Cliente *", placeholder="Nome da Empresa")
 
             st.markdown("<br>", unsafe_allow_html=True)
             st.subheader("⚙️ Regras e Condições")
@@ -345,7 +344,7 @@ def executar():
             st.info(f"📅 Previsão de Faturamento Calculada: **{data_prevista_preview_man.strftime('%d/%m/%Y')}**")
 
             if st.button("💾 Salvar Regra de Faturamento Manual", key="btn_salvar_fat_manual"):
-                if not numero_proposta or not cliente_nome or not email_cobranca:
+                if not numero_proposta or not cliente_nome:
                     st.error("Por favor, preencha todos os campos obrigatórios (*).")
                 else:
                     try:
@@ -355,7 +354,7 @@ def executar():
                             "condicao": condicao_man,
                             "dia_fixo": dia_fixo_man,
                             "inicio_periodo": str(inicio_periodo_man),
-                            "email_cliente": email_cobranca,
+                            "email_cliente": "",
                             "status": "Ativo",
                             "alerta_enviado": 0
                         }
