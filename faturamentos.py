@@ -158,13 +158,33 @@ def executar():
 
                 dias_restantes = (data_fatura - hoje).days
 
-                if dias_restantes in [2, 1] and alerta_enviado < 2:
+                # Regra de alertas: 2 dias antes (0), 1 dia antes (1) e no próprio dia (2)
+                # alerta_enviado vai de 0 até 3 para controlar o envio de cada etapa
+                if dias_restantes == 2 and alerta_enviado < 1:
                     assunto = f"[ALERTA OPERACIONAL] Preparação de Faturamento - Proposta Nº {num_prop} ({cliente})"
-                    corpo = f"Atenção Equipa,\n\nO faturamento para o cliente {cliente} (Proposta Nº {num_prop}, Condição: {condicao}) tem data prevista para {data_fatura.strftime('%d/%m/%Y')}.\nFaltam {dias_restantes} dia(s) para a data limite de preparação de dados.\n\nAtenciosamente,\nGlobex Multimodal"
+                    corpo = f"Atenção Equipa,\n\nO faturamento para o cliente {cliente} (Proposta Nº {num_prop}, Condição: {condicao}) tem data prevista para {data_fatura.strftime('%d/%m/%Y')}.\nFaltam 2 dias para a data limite de preparação de dados.\n\nAtenciosamente,\nGlobex Multimodal"
                     
                     sucesso, err = enviar_email_para_todos(prov, remetente, senha, lista_destinos, assunto, corpo)
                     if sucesso:
-                        supabase.table("faturamentos").update({"alerta_enviado": alerta_enviado + 1}).eq("id", rid).execute()
+                        supabase.table("faturamentos").update({"alerta_enviado": 1}).eq("id", rid).execute()
+                        disparos += 1
+
+                elif dias_restantes == 1 and alerta_enviado < 2:
+                    assunto = f"[ALERTA OPERACIONAL] Véspera de Faturamento - Proposta Nº {num_prop} ({cliente})"
+                    corpo = f"Atenção Equipa,\n\nO faturamento para o cliente {cliente} (Proposta Nº {num_prop}, Condição: {condicao}) tem data prevista para AMANHÃ ({data_fatura.strftime('%d/%m/%Y')}).\nCertifiquem-se de que os dados estão prontos.\n\nAtenciosamente,\nGlobex Multimodal"
+                    
+                    sucesso, err = enviar_email_para_todos(prov, remetente, senha, lista_destinos, assunto, corpo)
+                    if sucesso:
+                        supabase.table("faturamentos").update({"alerta_enviado": 2}).eq("id", rid).execute()
+                        disparos += 1
+
+                elif dias_restantes == 0 and alerta_enviado < 3:
+                    assunto = f"[URGENTE - HOJE] Prazo de Faturamento - Proposta Nº {num_prop} ({cliente})"
+                    corpo = f"Atenção Equipa,\n\nO faturamento para o cliente {cliente} (Proposta Nº {num_prop}, Condição: {condicao}) tem o prazo de entrega PARA HOJE ({data_fatura.strftime('%d/%m/%Y')}).\n\nO faturamento está finalizado ou a ser finalizado? Por favor, verifiquem com urgência.\n\nAtenciosamente,\nGlobex Multimodal"
+                    
+                    sucesso, err = enviar_email_para_todos(prov, remetente, senha, lista_destinos, assunto, corpo)
+                    if sucesso:
+                        supabase.table("faturamentos").update({"alerta_enviado": 3}).eq("id", rid).execute()
                         disparos += 1
 
             if disparos > 0:
@@ -358,7 +378,7 @@ def executar():
                 except Exception as e:
                     st.error(f"Erro ao encerrar: {e}")
 
-    # Tela 3: Configurações de E-mail (Exclusiva para o Gestor de Faturamentos com Múltiplos Destinatários)
+    # Tela 3: Configurações de E-mail
     elif opcao == "Configurações de E-mail":
         st.markdown("<h1 style='text-align: center; color: #0c3547;'>⚙️ Configurações de E-mail - Faturamentos</h1>", unsafe_allow_html=True)
         st.markdown("<p style='text-align: center; color: #666;'>Configure as credenciais SMTP e cadastre vários e-mails para receber as notificações operacionais.</p>", unsafe_allow_html=True)
@@ -377,7 +397,6 @@ def executar():
         st.caption("ℹ️ Pode inserir múltiplos endereços de e-mail separando-os por vírgula (`,`) ou ponto e vírgula (`;`).")
 
         if st.button("💾 Salvar Configurações de Faturamento"):
-            # Atualiza o session_state com os valores correntes dos widgets
             st.session_state["fat_provedor"] = st.session_state["sel_fat_prov"]
             st.session_state["fat_email_remetente"] = st.session_state["inp_fat_rem"]
             st.session_state["fat_senha_remetente"] = st.session_state["inp_fat_sen"]
@@ -397,4 +416,4 @@ def executar():
                     supabase.table("config_email_faturamento").upsert(dados_cfg).execute()
                     st.success("Configurações de e-mail guardadas com sucesso no Supabase!")
                 except Exception as e:
-                    st.error(f"Erro ao salvar configurações (verifique se a tabela 'config_email_faturamento' existe e o RLS está desativado): {e}")
+                    st.error(f"Erro ao salvar configurações: {e}")
