@@ -164,75 +164,58 @@ def executar():
         st.markdown("---")
         st.caption("© 2026 Globex Multimodal")
 
-    # Tela 1: Novo Faturamento (Manual ou via Contratos)
+    # Tela 1: Novo Faturamento (Apenas vinculado ao Gestor de Contratos)
     if opcao == "Novo Faturamento":
         st.markdown("<h1 style='text-align: center; color: #0c3547;'>📝 Configuração de Faturamento</h1>", unsafe_allow_html=True)
-        st.markdown("<p style='text-align: center; color: #666;'>Registe as regras de faturamento (via Contrato ou Manualmente).</p>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align: center; color: #666;'>Registe as regras de faturamento vinculadas aos Contratos cadastrados.</p>", unsafe_allow_html=True)
         st.markdown("<br>", unsafe_allow_html=True)
 
-        origem_dados = st.radio("Origem do Cliente:", ["Importar do Gestor de Contratos", "Cadastro Manual (Avulso)"])
+        try:
+            res_contratos = supabase.table("contratos").select("*").execute()
+            lista_contratos = res_contratos.data
+        except Exception:
+            lista_contratos = []
 
-        numero_proposta = ""
-        cliente_nome = ""
-        email_cobranca = ""
-
-        if origem_dados == "Importar do Gestor de Contratos":
-            try:
-                res_contratos = supabase.table("contratos").select("*").execute()
-                lista_contratos = res_contratos.data
-            except Exception:
-                lista_contratos = []
-
-            if not lista_contratos:
-                st.warning("Nenhum contrato encontrado na base. Utilize o Cadastro Manual.")
-            else:
-                contrato_escolhido = st.selectbox(
-                    "Selecione o Contrato:",
-                    lista_contratos,
-                    format_func=lambda c: f"Proposta Nº {c['num_contrato']} - {c['cliente']}"
-                )
-                # Guarda estritamente o número da proposta/contrato (num_contrato)
-                numero_proposta = str(contrato_escolhido['num_contrato'])
-                cliente_nome = contrato_escolhido['cliente']
-                email_cobranca = contrato_escolhido['email_cliente']
+        if not lista_contratos:
+            st.warning("⚠️ Nenhum contrato encontrado na base de dados. Por favor, cadastre primeiro um contrato no 'Gestor de Contratos'.")
         else:
-            col_m1, col_m2 = st.columns(2)
-            with col_m1:
-                numero_proposta = st.text_input("Número da Proposta / Contrato *", placeholder="Ex: PROP-2026-01")
-                cliente_nome = st.text_input("Nome do Cliente *", placeholder="Nome da Empresa")
-            with col_m2:
-                email_cobranca = st.text_input("E-mail para Alertas/Cobrança *", placeholder="operacional@cliente.com.br")
-
-        st.markdown("<br>", unsafe_allow_html=True)
-        st.subheader("⚙️ Regras e Condições")
-
-        col_c1, col_c2 = st.columns(2)
-        with col_c1:
-            condicao = st.selectbox(
-                "Condição de Faturamento *",
-                [
-                    "30 dias após inicio",
-                    "Data Fixa",
-                    "Penúltimo dia do mês",
-                    "Fim do mês",
-                    "1º dia útil do mês"
-                ]
+            contrato_escolhido = st.selectbox(
+                "Selecione o Contrato *",
+                lista_contratos,
+                format_func=lambda c: f"Proposta Nº {c['num_contrato']} - {c['cliente']}"
             )
             
-            dia_fixo = 10
-            if condicao == "Data Fixa":
-                dia_fixo = st.number_input("Dia do mês para faturar:", min_value=1, max_value=31, value=10)
+            numero_proposta = str(contrato_escolhido['num_contrato'])
+            cliente_nome = contrato_escolhido['cliente']
+            email_cobranca = contrato_escolhido['email_cliente']
 
-        with col_c2:
-            inicio_periodo = st.date_input("Início do Período de Faturamento *", datetime.now())
+            st.markdown("<br>", unsafe_allow_html=True)
+            st.subheader("⚙️ Regras e Condições")
 
-        data_prevista_preview = calcular_previsao_faturamento(condicao, inicio_periodo, dia_fixo)
-        st.info(f"📅 Previsão de Faturamento Calculada: **{data_prevista_preview.strftime('%d/%m/%Y')}**")
+            col_c1, col_c2 = st.columns(2)
+            with col_c1:
+                condicao = st.selectbox(
+                    "Condição de Faturamento *",
+                    [
+                        "30 dias após inicio",
+                        "Data Fixa",
+                        "Penúltimo dia do mês",
+                        "Fim do mês",
+                        "1º dia útil do mês"
+                    ]
+                )
+                
+                dia_fixo = 10
+                if condicao == "Data Fixa":
+                    dia_fixo = st.number_input("Dia do mês para faturar:", min_value=1, max_value=31, value=10)
 
-        if st.button("💾 Salvar Regra de Faturamento", key="btn_salvar_fat"):
-            if not cliente_nome or not numero_proposta or not email_cobranca:
-                st.error("Por favor, preencha todos os campos obrigatórios.")
-            else:
+            with col_c2:
+                inicio_periodo = st.date_input("Início do Período de Faturamento *", datetime.now())
+
+            data_prevista_preview = calcular_previsao_faturamento(condicao, inicio_periodo, dia_fixo)
+            st.info(f"📅 Previsão de Faturamento Calculada: **{data_prevista_preview.strftime('%d/%m/%Y')}**")
+
+            if st.button("💾 Salvar Regra de Faturamento", key="btn_salvar_fat"):
                 try:
                     novo_reg = {
                         "id_contrato": numero_proposta,
@@ -276,14 +259,12 @@ def executar():
         if df.empty:
             st.info("Nenhum faturamento ativo no momento.")
         else:
-            # Dicionário de mapeamento: busca o número real do contrato na tabela 'contratos' pelo ID ou valor
             try:
                 res_cont = supabase.table("contratos").select("id, num_contrato").execute()
                 map_contratos = {str(c['id']): str(c['num_contrato']) for c in res_cont.data}
             except Exception:
                 map_contratos = {}
 
-            # Substitui automaticamente caso o registo antigo contenha o ID em vez do número do contrato
             df['id_contrato_real'] = df['id_contrato'].apply(lambda x: map_contratos.get(str(x), str(x)))
 
             previsoes = []
@@ -299,7 +280,6 @@ def executar():
 
             st.subheader("📋 Faturas e Prazos Ativos")
 
-            # Exibe utilizando a coluna tratada com o número real da proposta
             display_df = df[['id_contrato_real', 'cliente', 'condicao', 'inicio_periodo', 'previsao_faturamento', 'status']].copy()
             display_df['inicio_periodo'] = pd.to_datetime(display_df['inicio_periodo']).dt.strftime('%d/%m/%Y')
             
