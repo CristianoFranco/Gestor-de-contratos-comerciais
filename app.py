@@ -28,7 +28,6 @@ if "modulo_ativo" not in st.session_state:
 # TELA DE INÍCIO (HOME)
 # ==========================================
 if st.session_state["modulo_ativo"] == "home":
-    # Logotipo centralizado na home se existir
     caminho_logo = "Logo.png" if os.path.exists("Logo.png") else ("logo.png" if os.path.exists("logo.png") else None)
     if caminho_logo:
         col_l1, col_l2, col_l3 = st.columns([1, 2, 1])
@@ -39,9 +38,9 @@ if st.session_state["modulo_ativo"] == "home":
     st.markdown("<p style='text-align: center; color: #666; font-size: 18px;'>Selecione abaixo o sistema que deseja aceder:</p>", unsafe_allow_html=True)
     st.markdown("<br>", unsafe_allow_html=True)
 
-    col1, col2, col3 = st.columns([1, 2, 2, 1], gap="medium")
+    # 4 colunas declaradas corretamente para corresponder à proporção [1, 2, 2, 1]
+    col1, col2, col3, col4 = st.columns([1, 2, 2, 1], gap="medium")
     
-    # Cartão Gestor de Contratos
     with col2:
         st.markdown("""
             <div class="card-home">
@@ -54,7 +53,6 @@ if st.session_state["modulo_ativo"] == "home":
             st.session_state["modulo_ativo"] = "contratos"
             st.rerun()
 
-    # Cartão Gestor de Faturamentos
     with col3:
         st.markdown("""
             <div class="card-home" style="border-top-color: #00b4d8;">
@@ -74,13 +72,11 @@ if st.session_state["modulo_ativo"] == "home":
 # ROTEAMENTO PARA OS MÓDULOS
 # ==========================================
 elif st.session_state["modulo_ativo"] == "contratos":
-    # Botão para voltar à home no topo
     if st.button("⬅️ Voltar ao Início", key="voltar_home_c"):
         st.session_state["modulo_ativo"] = "home"
         st.rerun()
     st.divider()
     
-    # Importa e executa o código do gestor de contratos
     import contratos
     contratos.executar()
 
@@ -90,6 +86,5 @@ elif st.session_state["modulo_ativo"] == "faturamentos":
         st.rerun()
     st.divider()
     
-    # Importa e executa o novo módulo de faturamentos
     import faturamentos
     faturamentos.executar()
