@@ -19,28 +19,31 @@ def executar():
         </style>
     """, unsafe_allow_html=True)
 
-    # Conexão Supabase com tratamento de erro robusto
+    # Conexão Supabase com tratamento de erro
     try:
         from supabase import create_client
         url = st.secrets["SUPABASE_URL"]
         key = st.secrets["SUPABASE_KEY"]
         supabase = create_client(url, key)
     except Exception as e:
-        st.error(f"Erro crítico ao conectar ao Supabase: {e}. Verifique os secrets.")
+        st.error(f"Erro crítico ao conectar ao Supabase: {e}")
         return
 
-    def carregar_config_email():
+    # Carregar configurações de e-mail específicas do Faturamento
+    def carregar_config_email_faturamento():
         try:
-            res = supabase.table("config_email").select("*").eq("id", 1).execute()
+            res = supabase.table("config_email_faturamento").select("*").eq("id", 1).execute()
             if res.data:
                 return res.data[0]
         except Exception:
             pass
         return {}
 
-    config_db = carregar_config_email()
+    config_db = carregar_config_email_faturamento()
 
-    def enviar_email(provedor, email_remetente, senha, email_destino, assunto, mensagem):
+    def enviar_email_para_todos(provedor, email_remetente, senha, lista_destinos, assunto, mensagem):
+        sucessos = 0
+        erros = []
         try:
             if provedor == "Gmail":
                 smtp_server = "smtp.gmail.com"
@@ -51,18 +54,29 @@ def executar():
             else:
                 return False, "Provedor inválido."
 
-            msg = MIMEMultipart()
-            msg['From'] = email_remetente
-            msg['To'] = email_destino
-            msg['Subject'] = assunto
-            msg.attach(MIMEText(mensagem, 'plain'))
-
             server = smtplib.SMTP(smtp_server, port)
             server.starttls()
             server.login(email_remetente, senha)
-            server.send_message(msg)
+
+            for destino in lista_destinos:
+                destino = destino.strip()
+                if not destino:
+                    continue
+                try:
+                    msg = MIMEMultipart()
+                    msg['From'] = email_remetente
+                    msg['To'] = destino
+                    msg['Subject'] = assunto
+                    msg.attach(MIMEText(mensagem, 'plain'))
+                    server.send_message(msg)
+                    sucessos += 1
+                except Exception as ex:
+                    erros.append(f"{destino}: {ex}")
+
             server.quit()
-            return True, "E-mail enviado com sucesso!"
+            if sucessos > 0:
+                return True, f"E-mail enviado com sucesso para {sucessos} destinatário(s)!"
+            return False, f"Falha ao enviar. Erros: {erros}"
         except Exception as e:
             return False, str(e)
 
@@ -104,9 +118,14 @@ def executar():
         remetente = config_db.get("email_remetente")
         senha = config_db.get("senha_remetente")
         prov = config_db.get("provedor", "Outlook / Office365")
+        destinos_str = config_db.get("emails_destino", "")
 
-        if not remetente or not senha:
-            return "Credenciais de e-mail não configuradas."
+        if not remetente or not senha or not destinos_str:
+            return "Configure as credenciais e os e-mails de destino na aba 'Configurações de E-mail'."
+
+        lista_destinos = [e.strip() for e in destinos_str.replace(";", ",").split(",") if e.strip()]
+        if not lista_destinos:
+            return "Nenhum e-mail de destino configurado."
 
         try:
             response = supabase.table("faturamentos").select("*").eq("status", "Ativo").execute()
@@ -118,9 +137,9 @@ def executar():
             for item in registros:
                 rid = item['id']
                 cliente = item['cliente']
+                num_prop = item['id_contrato']
                 condicao = item['condicao']
                 inicio_str = item['inicio_periodo']
-                email_cliente = item['email_cliente']
                 alerta_enviado = item.get('alerta_enviado', 0)
                 dia_fixo = item.get('dia_fixo', 10)
 
@@ -130,21 +149,21 @@ def executar():
                 dias_restantes = (data_fatura - hoje).days
 
                 if dias_restantes in [2, 1] and alerta_enviado < 2:
-                    assunto = f"[ALERTA OPERACIONAL] Preparação de Faturamento - {cliente}"
-                    corpo = f"Atenção Equipa Operacional,\n\nO faturamento para o cliente {cliente} (Condição: {condicao}) tem data prevista para {data_fatura.strftime('%d/%m/%Y')}.\nFaltam {dias_restantes} dia(s) para a data limite de preparação de dados.\n\nAtenciosamente,\nGlobex Multimodal"
+                    assunto = f"[ALERTA OPERACIONAL] Preparação de Faturamento - Proposta Nº {num_prop} ({cliente})"
+                    corpo = f"Atenção Equipa,\n\nO faturamento para o cliente {cliente} (Proposta Nº {num_prop}, Condição: {condicao}) tem data prevista para {data_fatura.strftime('%d/%m/%Y')}.\nFaltam {dias_restantes} dia(s) para a data limite de preparação de dados.\n\nAtenciosamente,\nGlobex Multimodal"
                     
-                    sucesso, err = enviar_email(prov, remetente, senha, email_cliente, assunto, corpo)
+                    sucesso, err = enviar_email_para_todos(prov, remetente, senha, lista_destinos, assunto, corpo)
                     if sucesso:
                         supabase.table("faturamentos").update({"alerta_enviado": alerta_enviado + 1}).eq("id", rid).execute()
                         disparos += 1
 
             if disparos > 0:
-                return f"Automação executada! {disparos} alerta(s) operacional(is) enviado(s)."
+                return f"Automação executada! {disparos} alerta(s) operacional(is) disparado(s) para a equipa."
             return "Nenhum alerta de faturamento pendente para hoje."
         except Exception as e:
-            return f"Erro na automação (verifique se a tabela 'faturamentos' existe): {e}"
+            return f"Erro na automação: {e}"
 
-    # Barra lateral
+    # Barra lateral de navegação do módulo
     with st.sidebar:
         caminho_logo_side = "Logo.png" if os.path.exists("Logo.png") else ("logo.png" if os.path.exists("logo.png") else None)
         if caminho_logo_side:
@@ -153,7 +172,7 @@ def executar():
             st.markdown("### 🌐 GLOBEX MULTIMODAL")
         
         st.markdown("---")
-        menu = ["Novo Faturamento", "Painel de Faturamentos Ativos"]
+        menu = ["Novo Faturamento", "Painel de Faturamentos Ativos", "Configurações de E-mail"]
         opcao = st.radio("Navegação Faturamentos", menu)
         st.markdown("---")
         st.caption("© 2026 Globex Multimodal")
@@ -167,10 +186,10 @@ def executar():
         try:
             res_contratos = supabase.table("contratos").select("*").execute()
             lista_contratos = res_contratos.data if res_contratos and res_contratos.data else []
-        except Exception as e:
-            st.error(f"Erro ao carregar contratos: {e}")
+        except Exception:
             lista_contratos = []
 
+        # Busca propostas que já possuem faturamento ativo para ocultar da lista
         propostas_já_cadastradas = []
         try:
             res_fat_ativos = supabase.table("faturamentos").select("id_contrato").eq("status", "Ativo").execute()
@@ -179,6 +198,7 @@ def executar():
         except Exception:
             pass
 
+        # Filtra rigorosamente para ocultar os contratos já inseridos
         contratos_disponiveis = [
             c for c in lista_contratos 
             if str(c['num_contrato']) not in propostas_já_cadastradas and str(c['id']) not in propostas_já_cadastradas
@@ -187,7 +207,7 @@ def executar():
         if not lista_contratos:
             st.warning("⚠️ Nenhum contrato encontrado na base de dados. Por favor, cadastre primeiro um contrato no 'Gestor de Contratos'.")
         elif not contratos_disponiveis:
-            st.info("💡 Todos os contratos cadastrados já possuem regras de faturamento ativas configuradas.")
+            st.info("💡 Todos os contratos cadastrados já possuem regras de faturamento ativas configuradas e foram ocultados da lista.")
         else:
             contrato_escolhido = st.selectbox(
                 "Selecione o Contrato *",
@@ -242,7 +262,7 @@ def executar():
                             "alerta_enviado": 0
                         }
                         supabase.table("faturamentos").insert(novo_reg).execute()
-                        st.success("Regra de faturamento guardada com sucesso!")
+                        st.success("Regra de faturamento guardada com sucesso! O contrato foi ocultado da lista de novos cadastros.")
                         st.rerun()
                 except Exception as e:
                     st.error(f"Erro ao salvar no Supabase (verifique se a tabela 'faturamentos' existe e o RLS está desativado): {e}")
@@ -270,7 +290,7 @@ def executar():
             if response and response.data:
                 df = pd.DataFrame(response.data)
         except Exception as e:
-            st.warning(f"Aviso: Não foi possível carregar os faturamentos ativos (verifique se a tabela 'faturamentos' foi criada no Supabase). Erro: {e}")
+            st.warning(f"Aviso: Não foi possível carregar os faturamentos ativos. Erro: {e}")
 
         if df.empty:
             st.info("Nenhum faturamento ativo no momento.")
@@ -312,7 +332,7 @@ def executar():
 
             st.divider()
             st.subheader("🔴 Gestão de Encerramento (Fim de Contrato)")
-            st.markdown("Selecione um cliente abaixo para encerrá-lo. O registo deixará de aparecer na tela ativa e de contabilizar alertas.")
+            st.markdown("Selecione um cliente abaixo para encerrá-lo. O registo deixará de aparecer na tela ativa e voltará a ficar disponível para novo cadastro se necessário.")
 
             reg_id = st.selectbox(
                 "Selecionar Registo para Encerrar:",
@@ -329,3 +349,37 @@ def executar():
                     st.rerun()
                 except Exception as e:
                     st.error(f"Erro ao encerrar: {e}")
+
+    # Tela 3: Configurações de E-mail (Exclusiva para o Gestor de Faturamentos com Múltiplos Destinatários)
+    elif opcao == "Configurações de E-mail":
+        st.markdown("<h1 style='text-align: center; color: #0c3547;'>⚙️ Configurações de E-mail - Faturamentos</h1>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align: center; color: #666;'>Configure as credenciais SMTP e cadastre vários e-mails para receber as notificações operacionais.</p>", unsafe_allow_html=True)
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        provedor = st.selectbox("Provedor SMTP", ["Outlook / Office365", "Gmail"], index=0 if config_db.get("provedor") == "Outlook / Office365" else 1)
+        email_remetente = st.text_input("E-mail Remetente", value=config_db.get("email_remetente", ""))
+        senha_remetente = st.text_input("Senha / Senha de App do Remetente", type="password", value=config_db.get("senha_remetente", ""))
+        
+        emails_destino = st.text_area(
+            "E-mails de Destino (Notificações Operacionais)", 
+            value=config_db.get("emails_destino", ""),
+            placeholder="Ex: operacional1@globex.com.br, operacional2@globex.com.br, gerente@globex.com.br"
+        )
+        st.caption("ℹ️ Pode inserir múltiplos endereços de e-mail separando-os por vírgula (`,`) ou ponto e vírgula (`;`).")
+
+        if st.button("💾 Salvar Configurações de Faturamento"):
+            if not email_remetente or not senha_remetente or not emails_destino:
+                st.error("Por favor, preencha todos os campos de e-mail.")
+            else:
+                try:
+                    dados_cfg = {
+                        "id": 1,
+                        "provedor": provedor,
+                        "email_remetente": email_remetente,
+                        "senha_remetente": senha_remetente,
+                        "emails_destino": emails_destino
+                    }
+                    supabase.table("config_email_faturamento").upsert(dados_cfg).execute()
+                    st.success("Configurações de e-mail guardadas com sucesso no Supabase!")
+                except Exception as e:
+                    st.error(f"Erro ao salvar configurações (verifique se a tabela 'config_email_faturamento' existe e o RLS está desativado): {e}")
