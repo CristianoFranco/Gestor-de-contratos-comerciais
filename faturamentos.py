@@ -85,6 +85,7 @@ def executar():
 
             server.quit()
 
+            # Regista no log do Supabase se pelo menos um e-mail foi enviado com sucesso
             if sucessos > 0:
                 try:
                     log_data = {
@@ -220,68 +221,47 @@ def executar():
     # Tela 1: Novo ou Editar Faturamento
     if opcao == "Novo / Editar Faturamento":
         st.markdown("<h1 style='text-align: center; color: #0c3547;'>📝 Gestão de Regras de Faturamento</h1>", unsafe_allow_html=True)
-        st.markdown("<p style='text-align: center; color: #666;'>Cadastre novos faturamentos (via Gestor de Contratos ou Manual) ou edite lançamentos existentes.</p>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align: center; color: #666;'>Cadastre novos faturamentos ou edite lançamentos existentes.</p>", unsafe_allow_html=True)
         st.markdown("<br>", unsafe_allow_html=True)
 
         modo = st.radio("Modo de Operação:", ["Novo Faturamento", "Editar Faturamento Existente"], horizontal=True)
         st.markdown("<br>", unsafe_allow_html=True)
 
         if modo == "Novo Faturamento":
-            tipo_cadastro = st.radio("Tipo de Cadastro:", ["Gestor de Contratos", "Cadastro Manual (Avulso)"], horizontal=True)
-            st.markdown("<br>", unsafe_allow_html=True)
+            try:
+                res_contratos = supabase.table("contratos").select("*").execute()
+                lista_contratos = res_contratos.data if res_contratos and res_contratos.data else []
+            except Exception:
+                lista_contratos = []
 
-            numero_proposta = ""
-            cliente_nome = ""
-            email_cobranca = ""
-            pode_prosseguir = False
+            propostas_ja_cadastradas = []
+            try:
+                res_fat_todos = supabase.table("faturamentos").select("id_contrato").execute()
+                if res_fat_todos and res_fat_todos.data:
+                    propostas_ja_cadastradas = [str(item['id_contrato']) for item in res_fat_todos.data]
+            except Exception:
+                pass
 
-            if tipo_cadastro == "Gestor de Contratos":
-                try:
-                    res_contratos = supabase.table("contratos").select("*").execute()
-                    lista_contratos = res_contratos.data if res_contratos and res_contratos.data else []
-                except Exception:
-                    lista_contratos = []
+            contratos_disponiveis = [
+                c for c in lista_contratos 
+                if str(c['num_contrato']) not in propostas_ja_cadastradas and str(c['id']) not in propostas_ja_cadastradas
+            ]
 
-                propostas_ja_cadastradas = []
-                try:
-                    res_fat_todos = supabase.table("faturamentos").select("id_contrato").execute()
-                    if res_fat_todos and res_fat_todos.data:
-                        propostas_ja_cadastradas = [str(item['id_contrato']) for item in res_fat_todos.data]
-                except Exception:
-                    pass
-
-                contratos_disponiveis = [
-                    c for c in lista_contratos 
-                    if str(c['num_contrato']) not in propostas_ja_cadastradas and str(c['id']) not in propostas_ja_cadastradas
-                ]
-
-                if not lista_contratos:
-                    st.warning("⚠️ Nenhum contrato encontrado na base de dados. Utilize o Cadastro Manual ao lado.")
-                elif not contratos_disponiveis:
-                    st.info("💡 Todos os contratos do Gestor de Contratos já possuem faturamento configurado. Utilize o Cadastro Manual se necessário.")
-                else:
-                    contrato_escolhido = st.selectbox(
-                        "Selecione o Contrato *",
-                        contratos_disponiveis,
-                        format_func=lambda c: f"Proposta Nº {c['num_contrato']} - {c['cliente']}"
-                    )
-                    numero_proposta = str(contrato_escolhido['num_contrato'])
-                    cliente_nome = contrato_escolhido['cliente']
-                    email_cobranca = contrato_escolhido['email_cliente']
-                    pode_prosseguir = True
-
-            else:  # Cadastro Manual (Avulso)
-                col_m1, col_m2 = st.columns(2)
-                with col_m1:
-                    numero_proposta = st.text_input("Número da Proposta / Contrato *", placeholder="Ex: PROP-2026-01")
-                    cliente_nome = st.text_input("Nome do Cliente *", placeholder="Nome da Empresa")
-                with col_m2:
-                    email_cobranca = st.text_input("E-mail para Alertas/Cobrança *", placeholder="financeiro@cliente.com.br")
+            if not lista_contratos:
+                st.warning("⚠️ Nenhum contrato encontrado na base de dados. Por favor, cadastre primeiro um contrato no 'Gestor de Contratos'.")
+            elif not contratos_disponiveis:
+                st.info("💡 Todos os contratos já possuem (ou já tiveram) faturamento configurado. Contratos encerrados não retornam para nova seleção.")
+            else:
+                contrato_escolhido = st.selectbox(
+                    "Selecione o Contrato *",
+                    contratos_disponiveis,
+                    format_func=lambda c: f"Proposta Nº {c['num_contrato']} - {c['cliente']}"
+                )
                 
-                if numero_proposta and cliente_nome and email_cobranca:
-                    pode_prosseguir = True
+                numero_proposta = str(contrato_escolhido['num_contrato'])
+                cliente_nome = contrato_escolhido['cliente']
+                email_cobranca = contrato_escolhido['email_cliente']
 
-            if pode_prosseguir:
                 st.markdown("<br>", unsafe_allow_html=True)
                 st.subheader("⚙️ Regras e Condições")
 
@@ -326,7 +306,7 @@ def executar():
                     except Exception as e:
                         st.error(f"Erro ao salvar no Supabase: {e}")
 
-        else:  # Modo Editar Faturamento Existente
+        else:
             df_ativos = pd.DataFrame()
             try:
                 res_ativos = supabase.table("faturamentos").select("*").eq("status", "Ativo").execute()
@@ -534,6 +514,7 @@ def executar():
         if df_logs.empty:
             st.info("Nenhum log de mensagem registado até ao momento.")
         else:
+            # Reorganiza colunas para exibição amigável
             display_logs = df_logs[['data_envio', 'cliente', 'proposta', 'status', 'mensagem']].copy()
             display_logs.columns = ['Data / Hora do Envio', 'Cliente', 'Proposta Nº', 'Status do Envio', 'Mensagem Enviada']
             
