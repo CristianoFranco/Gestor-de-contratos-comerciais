@@ -38,7 +38,6 @@ if st.session_state["modulo_ativo"] == "home":
     st.markdown("<p style='text-align: center; color: #666; font-size: 18px;'>Selecione abaixo o sistema que deseja aceder:</p>", unsafe_allow_html=True)
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # 4 colunas declaradas corretamente para corresponder à proporção [1, 2, 2, 1]
     col1, col2, col3, col4 = st.columns([1, 2, 2, 1], gap="medium")
     
     with col2:
@@ -57,7 +56,7 @@ if st.session_state["modulo_ativo"] == "home":
         st.markdown("""
             <div class="card-home" style="border-top-color: #00b4d8;">
                 <h3>💰 Gestor de Faturamentos</h3>
-                <p style="color: #666; min-height: 50px;">Módulo dedicado à gestão de faturas, valores, relatórios e controle financeiro.</p>
+                <p style="color: #666; min-height: 50px;">Módulo dedicado à gestão automática de faturamentos.</p>
             </div>
         """, unsafe_allow_html=True)
         st.markdown("<br>", unsafe_allow_html=True)
