@@ -51,7 +51,7 @@ def executar():
     if "fat_emails_destino" not in st.session_state:
         st.session_state["fat_emails_destino"] = config_db.get("emails_destino", "")
 
-    def enviar_email_para_todos(provedor, email_remetente, senha, lista_destinos, assunto, mensagem):
+    def enviar_email_para_todos(provedor, email_remetente, senha, lista_destinos, assunto, mensagem, cliente, proposta):
         sucessos = 0
         erros = []
         try:
@@ -84,7 +84,20 @@ def executar():
                     erros.append(f"{destino}: {ex}")
 
             server.quit()
+
+            # Regista no log do Supabase se pelo menos um e-mail foi enviado com sucesso
             if sucessos > 0:
+                try:
+                    log_data = {
+                        "data_envio": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        "cliente": cliente,
+                        "proposta": str(proposta),
+                        "mensagem": f"Assunto: {assunto}\n\n{mensagem}",
+                        "status": f"Enviado com sucesso para {sucessos} destinatário(s)"
+                    }
+                    supabase.table("logs_faturamento").insert(log_data).execute()
+                except Exception:
+                    pass
                 return True, f"E-mail enviado com sucesso para {sucessos} destinatário(s)!"
             return False, f"Falha ao enviar. Erros: {erros}"
         except Exception as e:
@@ -162,7 +175,7 @@ def executar():
                     assunto = f"[ALERTA OPERACIONAL] Preparação de Faturamento - Proposta Nº {num_prop} ({cliente})"
                     corpo = f"Atenção Equipa,\n\nO faturamento para o cliente {cliente} (Proposta Nº {num_prop}, Condição: {condicao}) tem data prevista para {data_fatura.strftime('%d/%m/%Y')}.\nFaltam 2 dias para a data limite de preparação de dados.\n\nAtenciosamente,\nGlobex Multimodal"
                     
-                    sucesso, err = enviar_email_para_todos(prov, remetente, senha, lista_destinos, assunto, corpo)
+                    sucesso, err = enviar_email_para_todos(prov, remetente, senha, lista_destinos, assunto, corpo, cliente, num_prop)
                     if sucesso:
                         supabase.table("faturamentos").update({"alerta_enviado": 1}).eq("id", rid).execute()
                         disparos += 1
@@ -171,7 +184,7 @@ def executar():
                     assunto = f"[ALERTA OPERACIONAL] Véspera de Faturamento - Proposta Nº {num_prop} ({cliente})"
                     corpo = f"Atenção Equipa,\n\nO faturamento para o cliente {cliente} (Proposta Nº {num_prop}, Condição: {condicao}) tem data prevista para AMANHÃ ({data_fatura.strftime('%d/%m/%Y')}).\nCertifiquem-se de que os dados estão prontos.\n\nAtenciosamente,\nGlobex Multimodal"
                     
-                    sucesso, err = enviar_email_para_todos(prov, remetente, senha, lista_destinos, assunto, corpo)
+                    sucesso, err = enviar_email_para_todos(prov, remetente, senha, lista_destinos, assunto, corpo, cliente, num_prop)
                     if sucesso:
                         supabase.table("faturamentos").update({"alerta_enviado": 2}).eq("id", rid).execute()
                         disparos += 1
@@ -180,7 +193,7 @@ def executar():
                     assunto = f"[URGENTE - HOJE] Prazo de Faturamento - Proposta Nº {num_prop} ({cliente})"
                     corpo = f"Atenção Equipa,\n\nO faturamento para o cliente {cliente} (Proposta Nº {num_prop}, Condição: {condicao}) tem o prazo de entrega PARA HOJE ({data_fatura.strftime('%d/%m/%Y')}).\n\nO faturamento está finalizado ou a ser finalizado? Por favor, verifiquem com urgência.\n\nAtenciosamente,\nGlobex Multimodal"
                     
-                    sucesso, err = enviar_email_para_todos(prov, remetente, senha, lista_destinos, assunto, corpo)
+                    sucesso, err = enviar_email_para_todos(prov, remetente, senha, lista_destinos, assunto, corpo, cliente, num_prop)
                     if sucesso:
                         supabase.table("faturamentos").update({"alerta_enviado": 3}).eq("id", rid).execute()
                         disparos += 1
@@ -200,7 +213,7 @@ def executar():
             st.markdown("### 🌐 GLOBEX MULTIMODAL")
         
         st.markdown("---")
-        menu = ["Novo / Editar Faturamento", "Painel de Faturamentos Ativos", "Configurações de E-mail"]
+        menu = ["Novo / Editar Faturamento", "Painel de Faturamentos Ativos", "Configurações de E-mail", "Gerenciar Logs de Mensagens"]
         opcao = st.radio("Navegação Faturamentos", menu)
         st.markdown("---")
         st.caption("© 2026 Globex Multimodal")
@@ -221,7 +234,6 @@ def executar():
             except Exception:
                 lista_contratos = []
 
-            # Regra: "Encerrou acabou" - busca TODOS os contratos já inseridos na tabela de faturamentos (ativos ou finalizados)
             propostas_ja_cadastradas = []
             try:
                 res_fat_todos = supabase.table("faturamentos").select("id_contrato").execute()
@@ -294,7 +306,7 @@ def executar():
                     except Exception as e:
                         st.error(f"Erro ao salvar no Supabase: {e}")
 
-        else:  # Modo Editar Faturamento Existente
+        else:
             df_ativos = pd.DataFrame()
             try:
                 res_ativos = supabase.table("faturamentos").select("*").eq("status", "Ativo").execute()
@@ -351,7 +363,7 @@ def executar():
                             "condicao": nova_condicao,
                             "dia_fixo": novo_dia_fixo,
                             "inicio_periodo": str(novo_inicio_periodo),
-                            "alerta_enviado": 0  # Reseta o controle de alertas para a nova regra recalculada
+                            "alerta_enviado": 0
                         }
                         supabase.table("faturamentos").update(dados_atualizados).eq("id", fat_selecionado_id).execute()
                         st.success("Regra de faturamento atualizada e sobrescrita com sucesso no Supabase!")
@@ -481,3 +493,29 @@ def executar():
                     st.success("Configurações de e-mail guardadas com sucesso no Supabase!")
                 except Exception as e:
                     st.error(f"Erro ao salvar configurações: {e}")
+
+    # Tela 4: Gerenciar Logs de Mensagens
+    elif opcao == "Gerenciar Logs de Mensagens":
+        st.markdown("<h1 style='text-align: center; color: #0c3547;'>📊 Histórico e Logs de Mensagens</h1>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align: center; color: #666;'>Consulte os registos de todas as notificações e alertas operacionais enviados pelo sistema.</p>", unsafe_allow_html=True)
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        if st.button("🔄 Atualizar Logs"):
+            st.rerun()
+
+        df_logs = pd.DataFrame()
+        try:
+            res_logs = supabase.table("logs_faturamento").select("*").order("data_envio", desc=True).execute()
+            if res_logs and res_logs.data:
+                df_logs = pd.DataFrame(res_logs.data)
+        except Exception as e:
+            st.warning(f"Aviso: Não foi possível carregar os logs (verifique se a tabela 'logs_faturamento' foi criada no Supabase). Erro: {e}")
+
+        if df_logs.empty:
+            st.info("Nenhum log de mensagem registado até ao momento.")
+        else:
+            # Reorganiza colunas para exibição amigável
+            display_logs = df_logs[['data_envio', 'cliente', 'proposta', 'status', 'mensagem']].copy()
+            display_logs.columns = ['Data / Hora do Envio', 'Cliente', 'Proposta Nº', 'Status do Envio', 'Mensagem Enviada']
+            
+            st.dataframe(display_logs, use_container_width=True, hide_index=True)
