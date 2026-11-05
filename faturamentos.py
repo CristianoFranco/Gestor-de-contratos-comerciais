@@ -189,8 +189,9 @@ def executar():
                 contrato_escolhido = st.selectbox(
                     "Selecione o Contrato:",
                     lista_contratos,
-                    format_func=lambda c: f"Contrato Nº {c['num_contrato']} - {c['cliente']}"
+                    format_func=lambda c: f"Proposta Nº {c['num_contrato']} - {c['cliente']}"
                 )
+                # Puxa estritamente o número da proposta/contrato (num_contrato) do Gestor de Contratos
                 numero_proposta = str(contrato_escolhido['num_contrato'])
                 cliente_nome = contrato_escolhido['cliente']
                 email_cobranca = contrato_escolhido['email_cliente']
@@ -288,7 +289,7 @@ def executar():
             
             df['previsao_faturamento'] = previsoes
 
-            # Seleciona apenas as colunas desejadas (sem IDs internos) e esconde o índice do pandas
+            # Exibe os dados recolhendo corretamente o número da proposta/contrato
             display_df = df[['id_contrato', 'cliente', 'condicao', 'inicio_periodo', 'previsao_faturamento', 'status']].copy()
             display_df['inicio_periodo'] = pd.to_datetime(display_df['inicio_periodo']).dt.strftime('%d/%m/%Y')
             
@@ -301,7 +302,6 @@ def executar():
                 'Status'
             ]
             
-            # hide_index=True oculta a coluna de índice do Pandas e a exclusão da coluna 'id' oculta o ID Registo
             st.dataframe(display_df, use_container_width=True, hide_index=True)
 
             st.divider()
