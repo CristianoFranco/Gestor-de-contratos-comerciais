@@ -251,8 +251,9 @@ def executar():
                 
                 col1, col2 = st.columns(2)
                 with col1:
-                    novo_cliente = st.text_input("Nome do Cliente *", value=c_data['cliente'], key=f"edit_cliente_{cid_edit}")
-                    novo_num_contrato = st.text_input("Número do Contrato *", value=c_data['num_contrato'], key=f"edit_num_{cid_edit}")
+                    # Campos Nome e Número do Contrato travados (disabled=True) para manter integridade com faturamento
+                    novo_cliente = st.text_input("Nome do Cliente (Fixo)", value=c_data['cliente'], disabled=True, key=f"edit_cliente_{cid_edit}")
+                    novo_num_contrato = st.text_input("Número do Contrato (Fixo)", value=c_data['num_contrato'], disabled=True, key=f"edit_num_{cid_edit}")
                     data_inicio_edit = st.date_input("Data de Início", value=datetime.strptime(c_data['data_inicio'], "%Y-%m-%d").date(), key=f"edit_data_{cid_edit}")
                 with col2:
                     novo_email = st.text_input("E-mail do Cliente *", value=c_data['email_cliente'], key=f"edit_email_{cid_edit}")
@@ -279,33 +280,28 @@ def executar():
                     st.warning(f"⚠️ A data limite do contrato foi fixada manualmente em: **{nova_data_fim.strftime('%d/%m/%Y')}**. O faturamento respeitará este limite.")
 
                 if st.button("💾 Salvar Alterações", key=f"btn_salvar_edit_{cid_edit}"):
-                    if not novo_cliente or not novo_num_contrato or not novo_email:
-                        st.error("Preencha todos os campos obrigatórios (*).")
+                    if not novo_email:
+                        st.error("Preencha o e-mail do cliente obrigatório (*).")
                     else:
                         try:
-                            res_dup = supabase.table("contratos").select("id").eq("num_contrato", novo_num_contrato).execute()
-                            duplicado = [item for item in res_dup.data if item['id'] != cid_edit]
+                            # Mantém rigorosamente o cliente e número originais para preservar a integridade com faturamentos
+                            dados_atualizados = {
+                                "cliente": c_data['cliente'],
+                                "num_contrato": c_data['num_contrato'],
+                                "data_inicio": str(data_inicio_edit),
+                                "vigencia_meses": nova_vigencia,
+                                "data_fim": str(nova_data_fim),
+                                "email_cliente": novo_email,
+                                "telefone_cliente": novo_tel
+                            }
+                            supabase.table("contratos").update(dados_atualizados).eq("id", cid_edit).execute()
                             
-                            if duplicado:
-                                st.error("Erro: Este número de contrato já pertence a outro registo no sistema.")
-                            else:
-                                dados_atualizados = {
-                                    "cliente": novo_cliente,
-                                    "num_contrato": novo_num_contrato,
-                                    "data_inicio": str(data_inicio_edit),
-                                    "vigencia_meses": nova_vigencia,
-                                    "data_fim": str(nova_data_fim),
-                                    "email_cliente": novo_email,
-                                    "telefone_cliente": novo_tel
-                                }
-                                supabase.table("contratos").update(dados_atualizados).eq("id", cid_edit).execute()
+                            if "selected_contract_id" in st.session_state:
+                                del st.session_state["selected_contract_id"]
                                 
-                                if "selected_contract_id" in st.session_state:
-                                    del st.session_state["selected_contract_id"]
-                                    
-                                st.success("✅ Contrato atualizado com sucesso!")
-                                st.toast("Alterações salvas com sucesso!", icon="✅")
-                                st.rerun()
+                            st.success("✅ Contrato atualizado com sucesso!")
+                            st.toast("Alterações salvas com sucesso!", icon="✅")
+                            st.rerun()
                         except Exception as e:
                             st.error(f"Erro ao atualizar: {e}")
 
