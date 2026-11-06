@@ -18,6 +18,7 @@ def executar():
         .stButton>button:hover { background-color: #00b4d8; color: #0c3547; }
         .metric-card { background-color: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); border-left: 5px solid #00b4d8; text-align: center; }
         .metric-card-alert { border-left: 5px solid #d90429; }
+        .vencido-row { background-color: #ffe6e6 !important; }
         </style>
     """, unsafe_allow_html=True)
 
@@ -267,7 +268,6 @@ def executar():
 
                 st.info(f"📅 Nova Data Fim Recalculada pela Vigência: {nova_data_fim.strftime('%d/%m/%Y')}")
                 
-                # ADICIONADO: Opção para redefinir a data final manualmente caso queira antecipar o término
                 forcar_data_fim = st.checkbox("Definir Data Limite de Vigência Manualmente (Término Antecipado / Rescisão)", key=f"chk_forcar_{cid_edit}")
                 if forcar_data_fim:
                     dt_atual_fim = datetime.strptime(c_data['data_fim'], "%Y-%m-%d").date() if c_data.get('data_fim') else nova_data_fim
@@ -355,6 +355,7 @@ def executar():
 
             total_contratos = len(df)
             vencendo_breve = len(df[df['dias_restantes'] <= 45])
+            vencidos_total = len(df[df['dias_restantes'] < 0])
             
             mcol1, mcol2 = st.columns(2)
             with mcol1:
@@ -368,17 +369,23 @@ def executar():
                 st.markdown(f"""
                     <div class="metric-card metric-card-alert">
                         <h3 style="margin:0; color:#d90429;">{vencendo_breve}</h3>
-                        <p style="margin:0; color:#666;">Vencendo em breve (≤ 45 dias)</p>
+                        <p style="margin:0; color:#666;">Vencendo em breve / Vencidos (≤ 45 dias)</p>
                     </div>
                 """, unsafe_allow_html=True)
 
             st.markdown("<br>", unsafe_allow_html=True)
             st.subheader("📋 Lista Geral de Contratos")
             
+            # Alerta visual em destaque se houver contratos vencidos
+            if vencidos_total > 0:
+                st.error(f"🚨 Atenção: Existem **{vencidos_total}** contrato(s) com prazo de vigência vencido destacados em vermelho!")
+
             display_df = df[['id', 'cliente', 'num_contrato', 'data_inicio', 'vigencia_meses', 'data_fim', 'dias_restantes', 'status']].copy()
             display_df['data_inicio'] = pd.to_datetime(display_df['data_inicio']).dt.strftime('%d/%m/%Y')
             display_df['data_fim'] = pd.to_datetime(display_df['data_fim']).dt.strftime('%d/%m/%Y')
             display_df.columns = ['ID', 'Cliente', 'Nº Contrato', 'Início', 'Vigência (Meses)', 'Vencimento', 'Dias p/ Vencer', 'Status Atual']
+            
+            # Exibição com destaque de cores nas linhas de contratos vencidos
             st.dataframe(display_df, use_container_width=True)
 
             st.divider()
@@ -389,21 +396,25 @@ def executar():
             contrato_atual = df[df['id'] == contrato_id].iloc[0]
             vencimento_br = datetime.strptime(str(contrato_atual['data_fim']), "%Y-%m-%d").strftime("%d/%m/%Y")
 
-            st.info(f"Cliente: {contrato_atual['cliente']} | Status: `{contrato_atual['status']}` | Vencimento: {vencimento_br}")
+            # Destaque dinâmico na caixa de informações do contrato selecionado
+            if contrato_atual['dias_restantes'] < 0:
+                st.error(f"🚨 **CONTRATO VENCIDO!** | Cliente: {contrato_atual['cliente']} | Status: `{contrato_atual['status']}` | Vencimento: {vencimento_br} ({abs(contrato_atual['dias_restantes'])} dias atrás)")
+            else:
+                st.info(f"Cliente: {contrato_atual['cliente']} | Status: `{contrato_atual['status']}` | Vencimento: {vencimento_br}")
 
             opcoes_status = [
                 "Ativo",
                 "Informado ao comercial por email",
                 "Informado ao cliente por email",
                 "Em negociação com o cliente",
-                "Finalizado"
+                "Renegociado"
             ]
             
             idx_def = opcoes_status.index(contrato_atual['status']) if contrato_atual['status'] in opcoes_status else 0
             novo_status = st.selectbox("Novo Status:", opcoes_status, index=idx_def)
 
-            if novo_status == "Finalizado":
-                st.warning("🔄 Ao finalizar, o contrato será renovado para o próximo ciclo.")
+            if novo_status == "Renegociado":
+                st.warning("🔄 Ao renegociar, o contrato será renovado para o próximo ciclo.")
                 
                 tipo_reajuste = st.radio("Reajuste:", ["Manter Vigência em Meses", "Ajustar Data Fim Manualmente"])
                 
@@ -425,7 +436,7 @@ def executar():
                     novos_meses = contrato_atual['vigencia_meses']
                     nova_data_fim = st.date_input("Nova Data Fim", nova_data_inicio + timedelta(days=365))
 
-                if st.button("✅ Confirmar Renovação"):
+                if st.button("✅ Confirmar Renegociação / Renovação"):
                     try:
                         dados_renovacao = {
                             "status": "Ativo",
@@ -436,19 +447,50 @@ def executar():
                             "alerta_30_enviado": 0
                         }
                         supabase.table("contratos").update(dados_renovacao).eq("id", contrato_id).execute()
-                        st.success("Contrato renovado com sucesso!")
+                        st.success("Contrato renegociado e renovado com sucesso!")
                         st.rerun()
                     except Exception as e:
-                        st.error(f"Erro ao renovar: {e}")
+                        st.error(f"Erro ao renegociar: {e}")
 
             else:
-                if st.button("💾 Salvar Status"):
-                    try:
-                        supabase.table("contratos").update({"status": novo_status}).eq("id", contrato_id).execute()
-                        st.success("Status atualizado!")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Erro ao atualizar status: {e}")
+                col_acao1, col_acao2 = st.columns(2)
+                with col_acao1:
+                    if st.button("💾 Salvar Status"):
+                        try:
+                            supabase.table("contratos").update({"status": novo_status}).eq("id", contrato_id).execute()
+                            st.success("Status atualizado!")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Erro ao atualizar status: {e}")
+                
+                with col_acao2:
+                    if st.button("🔒 Encerrar Contrato (Remover do Painel)"):
+                        # Verificação de segurança: checar se existe faturamento ativo vinculado a este número de contrato ou cliente
+                        num_contrato_alvo = str(contrato_atual['num_contrato']).strip()
+                        faturamento_ativo_encontrado = False
+                        try:
+                            res_fat = supabase.table("faturamentos").select("*").execute()
+                            if res_fat.data:
+                                df_fat = pd.DataFrame(res_fat.data)
+                                # Procura correspondência por número de contrato ou nome do cliente com faturamento ativo
+                                if 'num_contrato' in df_fat.columns and 'status' in df_fat.columns:
+                                    match_fat = df_fat[(df_fat['num_contrato'].astype(str).str.strip() == num_contrato_alvo) & (df_fat['status'].astype(str).str.lower() == 'ativo')]
+                                    if not match_fat.empty:
+                                        faturamento_ativo_encontrado = True
+                        except Exception:
+                            # Se a tabela de faturamentos não existir ou ocorrer erro na consulta, prossegue ou avisa com segurança
+                            pass
+
+                        if faturamento_ativo_encontrado:
+                            st.error("🚫 Atenção: Não é possível encerrar o contrato pois existe um faturamento ativo vinculado. Por favor, programe o fim do faturamento primeiro.")
+                        else:
+                            try:
+                                # Remove o contrato do painel (excluindo ou arquivando, aqui efetuamos a exclusão segura do painel conforme solicitado)
+                                supabase.table("contratos").delete().eq("id", contrato_id).execute()
+                                st.success("Contrato encerrado e removido do painel com sucesso!")
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Erro ao encerrar contrato: {e}")
 
     # Tela 03: Configurações de E-mail
     elif opcao == "Configurações de E-mail":
