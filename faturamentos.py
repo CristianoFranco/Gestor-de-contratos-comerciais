@@ -146,6 +146,14 @@ def executar_automacao_faturamentos(supabase, config_db):
         response = supabase.table("faturamentos").select("*").eq("status", "Ativo").execute()
         registros = response.data if response and response.data else []
 
+        # Mapeia as datas fim dos contratos para aplicar a mesma regra de limite na automação
+        res_cont = supabase.table("contratos").select("num_contrato, data_fim").execute()
+        map_vencimentos = {}
+        if res_cont and res_cont.data:
+            for c in res_cont.data:
+                if c.get('num_contrato') and c.get('data_fim'):
+                    map_vencimentos[str(c['num_contrato'])] = str(c['data_fim'])
+
         hoje = datetime.now().date()
         disparos = 0
 
@@ -161,6 +169,15 @@ def executar_automacao_faturamentos(supabase, config_db):
 
             inicio_dt = datetime.strptime(inicio_str, "%Y-%m-%d").date()
             data_fatura = calcular_previsao_faturamento(condicao, inicio_dt, dia_fixo, pular_mes)
+
+            # Aplica a mesma trava da data limite do contrato na automação
+            if num_prop in map_vencimentos:
+                try:
+                    venc_dt = datetime.strptime(map_vencimentos[num_prop], "%Y-%m-%d").date()
+                    if data_fatura >= venc_dt:
+                        data_fatura = venc_dt
+                except Exception:
+                    pass
 
             dias_restantes = (data_fatura - hoje).days
 
