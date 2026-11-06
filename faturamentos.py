@@ -30,6 +30,7 @@ def executar():
         return
 
     # Carregar configurações de e-mail específicas do Faturamento
+    @st.cache_data(ttl=60)
     def carregar_config_email_faturamento():
         try:
             res = supabase.table("config_email_faturamento").select("*").eq("id", 1).execute()
@@ -51,7 +52,7 @@ def executar():
     if "fat_emails_destino" not in st.session_state:
         st.session_state["fat_emails_destino"] = config_db.get("emails_destino", "")
 
-    def enviar_email_parse(provedor, email_remetente, senha, lista_destinos, assunto, mensagem, cliente, proposta):
+    def enviar_email_para_todos(provedor, email_remetente, senha, lista_destinos, assunto, mensagem, cliente, proposta):
         sucessos = 0
         erros = []
         try:
@@ -64,7 +65,7 @@ def executar():
             else:
                 return False, "Provedor inválido."
 
-            server = smtplib.SMTP(smtp_server, port)
+            server = smtplib.SMTP(smtp_server, port, timeout=10)
             server.starttls()
             server.login(email_remetente, senha)
 
@@ -114,7 +115,6 @@ def executar():
         if isinstance(inicio_dt, str):
             inicio_dt = datetime.strptime(inicio_dt, "%Y-%m-%d").date()
 
-        # Se a flag de pular mês estiver ativa, define uma base no mês seguinte
         base_dt = inicio_dt
         if pular_mes_atual:
             mes_seguinte = inicio_dt.month % 12 + 1
@@ -209,7 +209,7 @@ def executar():
                     assunto = f"[ALERTA OPERACIONAL] Preparação de Faturamento - Proposta Nº {num_prop} ({cliente})"
                     corpo = f"Atenção Equipa,\n\nO faturamento para o cliente {cliente} (Proposta Nº {num_prop}, Condição: {condicao}) tem data prevista para {data_fatura.strftime('%d/%m/%Y')}.\nFaltam 2 dias para a data limite de preparação de dados.\n\nAtenciosamente,\nGlobex Multimodal"
                     
-                    sucesso, err = enviar_email_parse(prov, remetente, senha, lista_destinos, assunto, corpo, cliente, num_prop)
+                    sucesso, err = enviar_email_para_todos(prov, remetente, senha, lista_destinos, assunto, corpo, cliente, num_prop)
                     if sucesso:
                         supabase.table("faturamentos").update({"alerta_enviado": 1}).eq("id", rid).execute()
                         disparos += 1
@@ -218,7 +218,7 @@ def executar():
                     assunto = f"[ALERTA OPERACIONAL] Véspera de Faturamento - Proposta Nº {num_prop} ({cliente})"
                     corpo = f"Atenção Equipa,\n\nO faturamento para o cliente {cliente} (Proposta Nº {num_prop}, Condição: {condicao}) tem data prevista para AMANHÃ ({data_fatura.strftime('%d/%m/%Y')}).\nCertifiquem-se de que os dados estão prontos.\n\nAtenciosamente,\nGlobex Multimodal"
                     
-                    sucesso, err = enviar_email_parse(prov, remetente, senha, lista_destinos, assunto, corpo, cliente, num_prop)
+                    sucesso, err = enviar_email_para_todos(prov, remetente, senha, lista_destinos, assunto, corpo, cliente, num_prop)
                     if sucesso:
                         supabase.table("faturamentos").update({"alerta_enviado": 2}).eq("id", rid).execute()
                         disparos += 1
@@ -227,7 +227,7 @@ def executar():
                     assunto = f"[URGENTE - HOJE] Prazo de Faturamento - Proposta Nº {num_prop} ({cliente})"
                     corpo = f"Atenção Equipa,\n\nO faturamento para o cliente {cliente} (Proposta Nº {num_prop}, Condição: {condicao}) tem o prazo de entrega PARA HOJE ({data_fatura.strftime('%d/%m/%Y')}).\n\nO faturamento está finalizado ou a ser finalizado? Por favor, verifiquem com urgência.\n\nAtenciosamente,\nGlobex Multimodal"
                     
-                    sucesso, err = enviar_email_parse(prov, remetente, senha, lista_destinos, assunto, corpo, cliente, num_prop)
+                    sucesso, err = enviar_email_para_todos(prov, remetente, senha, lista_destinos, assunto, corpo, cliente, num_prop)
                     if sucesso:
                         supabase.table("faturamentos").update({"alerta_enviado": 3}).eq("id", rid).execute()
                         disparos += 1
@@ -319,7 +319,7 @@ def executar():
                 with col_c2:
                     inicio_periodo = st.date_input("Início do Período de Faturamento *", datetime.now())
 
-                pular_mes_atual = st.checkbox("Pular faturamento do mês atual (começar a partir do mês seguinte)")
+                pular_mes_atual = st.checkbox("Pular faturamento do mês atual (começar a partir do mês seguinte)", key="pular_novo")
 
                 data_prevista_preview = calcular_previsao_faturamento(condicao, inicio_periodo, dia_fixo, pular_mes_atual)
                 st.info(f"📅 Previsão de Faturamento Calculada: **{data_prevista_preview.strftime('%d/%m/%Y')}**")
@@ -378,7 +378,7 @@ def executar():
             with col_c2:
                 inicio_periodo_man = st.date_input("Início do Período de Faturamento *", datetime.now(), key="inicio_man")
 
-            pular_mes_man = st.checkbox("Pular faturamento do mês atual (começar a partir do mês seguinte)", key="pular_man")
+            pular_mes_man = st.checkbox("Pular faturamento do mês atual (começar a partir do mês seguinte)", key="pular_man_avulso")
 
             data_prevista_preview_man = calcular_previsao_faturamento(condicao_man, inicio_periodo_man, dia_fixo_man, pular_mes_man)
             st.info(f"📅 Previsão de Faturamento Calculada: **{data_prevista_preview_man.strftime('%d/%m/%Y')}**")
@@ -480,16 +480,10 @@ def executar():
         st.markdown("<p style='text-align: center; color: #666;'>Acompanhe os prazos de preparação e encerre contratos quando necessário.</p>", unsafe_allow_html=True)
         st.markdown("<br>", unsafe_allow_html=True)
 
-        if "auto_fat_exec" not in st.session_state:
-            msg_res = executar_automacao_faturamentos()
-            st.session_state["auto_fat_exec"] = True
-            if "enviado" in msg_res:
-                st.toast(msg_res)
-
-        if st.button("🔄 Executar Alertas Manualmente"):
-            msg = executar_automacao_faturamentos()
-            st.toast(msg)
-            st.rerun()
+        if st.button("🔄 Executar Alertas e Verificar Prazos Agora"):
+            with st.spinner("A verificar prazos e a enviar e-mails operacionais..."):
+                msg = executar_automacao_faturamentos()
+                st.success(msg)
 
         df = pd.DataFrame()
         try:
