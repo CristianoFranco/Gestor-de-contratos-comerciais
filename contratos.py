@@ -166,69 +166,63 @@ def executar():
         
         with tab_cad:
             st.subheader("Novo Contrato")
-            col1, col2 = st.columns(2)
-            with col1:
-                cliente = st.text_input("Nome do Cliente *", key="cad_cliente")
-                num_contrato = st.text_input("Número do Contrato *", key="cad_num")
-                data_inicio = st.date_input("Data de Início do Contrato", datetime.now(), key="cad_data_inicio")
             
-            with col2:
-                email_cliente = st.text_input("E-mail do Cliente *", key="cad_email")
-                telefone_cliente = st.text_input("Telefone do Cliente *", key="cad_tel")
-                vigencia_meses = st.number_input("Vigência / Período do Reajuste (em Meses) *", min_value=1, value=12, step=1, key="cad_vigencia")
-
-            total_meses = int(vigencia_meses)
-            anos_extras = total_meses // 12
-            meses_extras = total_meses % 12
-            
-            ano_alvo = data_inicio.year + anos_extras + (data_inicio.month + meses_extras - 1) // 12
-            mes_alvo = (data_inicio.month + meses_extras - 1) % 12 + 1
-            dia_alvo = data_inicio.day
-            
-            ultimo_dia_mes_alvo = calendar.monthrange(ano_alvo, mes_alvo)[1]
-            if dia_alvo > ultimo_dia_mes_alvo:
-                dia_alvo = ultimo_dia_mes_alvo
+            # Utilização de st.form para gerenciar o envio e a limpeza automática dos campos com segurança
+            with st.form("form_novo_contrato", clear_on_submit=True):
+                col1, col2 = st.columns(2)
+                with col1:
+                    cliente = st.text_input("Nome do Cliente *")
+                    num_contrato = st.text_input("Número do Contrato *")
+                    data_inicio = st.date_input("Data de Início do Contrato", datetime.now())
                 
-            data_fim_calculada = datetime(ano_alvo, mes_alvo, dia_alvo).date()
+                with col2:
+                    email_cliente = st.text_input("E-mail do Cliente *")
+                    telefone_cliente = st.text_input("Telefone do Cliente *")
+                    vigencia_meses = st.number_input("Vigência / Período do Reajuste (em Meses) *", min_value=1, value=12, step=1)
 
-            st.info(f"📅 Previsão de Término / Renovação: {data_fim_calculada.strftime('%d/%m/%Y')}")
+                total_meses = int(vigencia_meses)
+                anos_extras = total_meses // 12
+                meses_extras = total_meses % 12
+                
+                ano_alvo = data_inicio.year + anos_extras + (data_inicio.month + meses_extras - 1) // 12
+                mes_alvo = (data_inicio.month + meses_extras - 1) % 12 + 1
+                dia_alvo = data_inicio.day
+                
+                ultimo_dia_mes_alvo = calendar.monthrange(ano_alvo, mes_alvo)[1]
+                if dia_alvo > ultimo_dia_mes_alvo:
+                    dia_alvo = ultimo_dia_mes_alvo
+                    
+                data_fim_calculada = datetime(ano_alvo, mes_alvo, dia_alvo).date()
 
-            if st.button("💾 Salvar Contrato", key="btn_salvar_novo"):
-                if not cliente or not num_contrato or not email_cliente:
-                    st.error("Por favor, preencha todos os campos obrigatórios (*).")
-                else:
-                    try:
-                        novo_registro = {
-                            "cliente": cliente,
-                            "num_contrato": num_contrato,
-                            "data_inicio": str(data_inicio),
-                            "vigencia_meses": vigencia_meses,
-                            "data_fim": str(data_fim_calculada),
-                            "email_cliente": email_cliente,
-                            "telefone_cliente": telefone_cliente,
-                            "status": "Ativo",
-                            "alerta_45_enviado": 0,
-                            "alerta_30_enviado": 0
-                        }
-                        supabase.table("contratos").insert(novo_registro).execute()
-                        
-                        # Feedback visual claro e persistente com Toast e Sucesso
-                        st.success("✅ Contrato cadastrado com sucesso!")
-                        st.toast("Contrato salvo com sucesso!", icon="✅")
-                        
-                        # Limpa os campos do formulário redefinindo as keys no session_state
-                        st.session_state["cad_cliente"] = ""
-                        st.session_state["cad_num"] = ""
-                        st.session_state["cad_email"] = ""
-                        st.session_state["cad_tel"] = ""
-                        
-                        # Pequena pausa visual para o utilizador ler a mensagem antes de atualizar
-                        st.rerun()
-                    except Exception as e:
-                        if "duplicate key" in str(e).lower() or "unique constraint" in str(e).lower():
-                            st.error("Erro: Número de contrato já cadastrado.")
-                        else:
-                            st.error(f"Erro ao salvar: {e}")
+                st.info(f"📅 Previsão de Término / Renovação: {data_fim_calculada.strftime('%d/%m/%Y')}")
+
+                submitted = st.form_submit_button("💾 Salvar Contrato")
+
+                if submitted:
+                    if not cliente or not num_contrato or not email_cliente:
+                        st.error("Por favor, preencha todos os campos obrigatórios (*).")
+                    else:
+                        try:
+                            novo_registro = {
+                                "cliente": cliente,
+                                "num_contrato": num_contrato,
+                                "data_inicio": str(data_inicio),
+                                "vigencia_meses": vigencia_meses,
+                                "data_fim": str(data_fim_calculada),
+                                "email_cliente": email_cliente,
+                                "telefone_cliente": telefone_cliente,
+                                "status": "Ativo",
+                                "alerta_45_enviado": 0,
+                                "alerta_30_enviado": 0
+                            }
+                            supabase.table("contratos").insert(novo_registro).execute()
+                            st.success("✅ Contrato cadastrado com sucesso! Os campos foram limpos.")
+                            st.toast("Contrato salvo com sucesso!", icon="✅")
+                        except Exception as e:
+                            if "duplicate key" in str(e).lower() or "unique constraint" in str(e).lower():
+                                st.error("Erro: Número de contrato já cadastrado.")
+                            else:
+                                st.error(f"Erro ao salvar: {e}")
 
         with tab_edit:
             df_edit = pd.DataFrame()
@@ -310,7 +304,6 @@ def executar():
                                 if "selected_contract_id" in st.session_state:
                                     del st.session_state["selected_contract_id"]
                                     
-                                # Feedback visual claro de sucesso na edição
                                 st.success("✅ Contrato atualizado com sucesso!")
                                 st.toast("Alterações salvas com sucesso!", icon="✅")
                                 st.rerun()
@@ -394,155 +387,4 @@ def executar():
             if vencidos_total > 0:
                 st.error(f"🚨 Atenção: Existem **{vencidos_total}** contrato(s) com prazo de vigência vencido destacados em vermelho!")
 
-            display_df = df[['id', 'cliente', 'num_contrato', 'data_inicio', 'vigencia_meses', 'data_fim', 'dias_restantes', 'status']].copy()
-            display_df['data_inicio'] = pd.to_datetime(display_df['data_inicio']).dt.strftime('%d/%m/%Y')
-            display_df['data_fim'] = pd.to_datetime(display_df['data_fim']).dt.strftime('%d/%m/%Y')
-            display_df.columns = ['ID', 'Cliente', 'Nº Contrato', 'Início', 'Vigência (Meses)', 'Vencimento', 'Dias p/ Vencer', 'Status Atual']
-            
-            st.dataframe(display_df, use_container_width=True)
-
-            st.divider()
-            st.subheader("⚙️ Atualização de Status e Renovação")
-
-            contrato_id = st.selectbox("Selecione o Contrato:", df['id'].tolist(), format_func=lambda x: f"ID {x} - {df[df['id']==x]['cliente'].values[0]} ({df[df['id']==x]['num_contrato'].values[0]})")
-            
-            contrato_atual = df[df['id'] == contrato_id].iloc[0]
-            vencimento_br = datetime.strptime(str(contrato_atual['data_fim']), "%Y-%m-%d").strftime("%d/%m/%Y")
-
-            if contrato_atual['dias_restantes'] < 0:
-                st.error(f"🚨 **CONTRATO VENCIDO!** | Cliente: {contrato_atual['cliente']} | Status: `{contrato_atual['status']}` | Vencimento: {vencimento_br} ({abs(contrato_atual['dias_restantes'])} dias atrás)")
-            else:
-                st.info(f"Cliente: {contrato_atual['cliente']} | Status: `{contrato_atual['status']}` | Vencimento: {vencimento_br}")
-
-            opcoes_status = [
-                "Ativo",
-                "Informado ao comercial por email",
-                "Informado ao cliente por email",
-                "Em negociação com o cliente",
-                "Renegociado"
-            ]
-            
-            idx_def = opcoes_status.index(contrato_atual['status']) if contrato_atual['status'] in opcoes_status else 0
-            novo_status = st.selectbox("Novo Status:", opcoes_status, index=idx_def)
-
-            if novo_status == "Renegociado":
-                st.warning("🔄 Ao renegociar, o contrato será renovado para o próximo ciclo.")
-                
-                tipo_reajuste = st.radio("Reajuste:", ["Manter Vigência em Meses", "Ajustar Data Fim Manualmente"])
-                
-                nova_data_inicio = datetime.now().date()
-                if tipo_reajuste == "Manter Vigência em Meses":
-                    novos_meses = st.number_input("Nova Vigência (meses)", min_value=1, value=int(contrato_atual['vigencia_meses']))
-                    
-                    t_m = int(novos_meses)
-                    a_e = t_m // 12
-                    m_e = t_m % 12
-                    a_a = nova_data_inicio.year + a_e + (nova_data_inicio.month + m_e - 1) // 12
-                    m_a = (nova_data_inicio.month + m_e - 1) % 12 + 1
-                    d_a = nova_data_inicio.day
-                    ultimo_d_a = calendar.monthrange(a_a, m_a)[1]
-                    if d_a > ultimo_d_a:
-                        d_a = ultimo_d_a
-                    nova_data_fim = datetime(a_a, m_a, d_a).date()
-                else:
-                    novos_meses = contrato_atual['vigencia_meses']
-                    nova_data_fim = st.date_input("Nova Data Fim", nova_data_inicio + timedelta(days=365))
-
-                if st.button("✅ Confirmar Renegociação / Renovação"):
-                    try:
-                        dados_renovacao = {
-                            "status": "Ativo",
-                            "data_inicio": str(nova_data_inicio),
-                            "vigencia_meses": novos_meses,
-                            "data_fim": str(nova_data_fim),
-                            "alerta_45_enviado": 0,
-                            "alerta_30_enviado": 0
-                        }
-                        supabase.table("contratos").update(dados_renovacao).eq("id", contrato_id).execute()
-                        st.success("✅ Contrato renegociado e renovado com sucesso!")
-                        st.toast("Contrato renegociado com sucesso!", icon="🔄")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Erro ao renegociar: {e}")
-
-            else:
-                col_acao1, col_acao2 = st.columns(2)
-                with col_acao1:
-                    if st.button("💾 Salvar Status"):
-                        try:
-                            supabase.table("contratos").update({"status": novo_status}).eq("id", contrato_id).execute()
-                            st.success("✅ Status atualizado com sucesso!")
-                            st.toast("Status atualizado!", icon="💾")
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"Erro ao atualizar status: {e}")
-                
-                with col_acao2:
-                    if st.button("🔒 Encerrar Contrato (Remover do Painel)"):
-                        # Verificação rigorosa e segura utilizando id_contrato na tabela faturamentos
-                        id_contrato_alvo = str(contrato_id).strip()
-                        num_contrato_alvo = str(contrato_atual['num_contrato']).strip()
-                        
-                        faturamento_ativo_encontrado = False
-                        try:
-                            res_fat = supabase.table("faturamentos").select("*").execute()
-                            if res_fat.data:
-                                df_fat = pd.DataFrame(res_fat.data)
-                                if 'id_contrato' in df_fat.columns and 'status' in df_fat.columns:
-                                    match_fat = df_fat[
-                                        (
-                                            (df_fat['id_contrato'].astype(str).str.strip() == id_contrato_alvo) | 
-                                            (df_fat['id_contrato'].astype(str).str.strip() == num_contrato_alvo)
-                                        ) & 
-                                        (df_fat['status'].astype(str).str.strip().str.lower() == 'ativo')
-                                    ]
-                                    if not match_fat.empty:
-                                        faturamento_ativo_encontrado = True
-                        except Exception:
-                            pass
-
-                        if faturamento_ativo_encontrado:
-                            st.error("🚫 **Operação Bloqueada:** Não foi possível excluir o contrato devido a haver faturamentos programados ou ativos vinculados. Por favor, encerre os faturamentos associados primeiro.")
-                        else:
-                            try:
-                                supabase.table("contratos").delete().eq("id", contrato_id).execute()
-                                st.success("✅ Contrato encerrado e removido do painel com sucesso!")
-                                st.toast("Contrato encerrado com sucesso!", icon="🔒")
-                                st.rerun()
-                            except Exception as e:
-                                st.error("🚫 **Operação Bloqueada:** Não foi possível excluir o contrato devido a haver faturamentos programados na base de dados.")
-
-    # Tela 03: Configurações de E-mail
-    elif opcao == "Configurações de E-mail":
-        st.markdown("<h1 style='text-align: center; color: #0c3547;'>⚙️ Configurações de E-mail</h1>", unsafe_allow_html=True)
-        st.markdown("<p style='text-align: center; color: #666;'>Configure as credenciais para disparos automáticos. Os dados ficam salvos de forma segura na nuvem.</p>", unsafe_allow_html=True)
-        st.markdown("<br>", unsafe_allow_html=True)
-
-        provedor = st.selectbox("Provedor", ["Outlook / Office365", "Gmail"], index=0 if st.session_state.get("provedor") == "Outlook / Office365" else 1)
-        email_remetente = st.text_input("E-mail Remetente", value=st.session_state.get("email_remetente", ""))
-        senha_remetente = st.text_input("Senha / Senha de App", type="password", value=st.session_state.get("senha_remetente", ""))
-        email_comercial = st.text_input("E-mail do Comercial Globex", value=st.session_state.get("email_comercial_globex", ""))
-
-        if st.button("💾 Salvar Configurações"):
-            if not email_remetente or not senha_remetente or not email_comercial:
-                st.error("Preencha todos os campos de e-mail.")
-            else:
-                try:
-                    dados_config = {
-                        "id": 1,
-                        "provedor": provedor,
-                        "email_remetente": email_remetente,
-                        "senha_remetente": senha_remetente,
-                        "email_comercial_globex": email_comercial
-                    }
-                    supabase.table("config_email").upsert(dados_config).execute()
-                    
-                    st.session_state["provedor"] = provedor
-                    st.session_state["email_remetente"] = email_remetente
-                    st.session_state["senha_remetente"] = senha_remetente
-                    st.session_state["email_comercial_globex"] = email_comercial
-                    
-                    st.success("✅ Configurações salvas com sucesso no Supabase!")
-                    st.toast("Configurações salvas com sucesso!", icon="💾")
-                except Exception as e:
-                    st.error(f"Erro ao salvar configurações no banco: {e}")
+            display
