@@ -214,7 +214,6 @@ def executar():
         </style>
     """, unsafe_allow_html=True)
 
-    # Conexão Supabase com tratamento de erro
     try:
         from supabase import create_client
         url = st.secrets["SUPABASE_URL"]
@@ -226,7 +225,6 @@ def executar():
 
     config_db = carregar_config_email_faturamento(supabase)
 
-    # Inicializar session_state para as configurações de e-mail
     if "fat_provedor" not in st.session_state:
         st.session_state["fat_provedor"] = config_db.get("provedor", "Outlook / Office365")
     if "fat_email_remetente" not in st.session_state:
@@ -236,7 +234,6 @@ def executar():
     if "fat_emails_destino" not in st.session_state:
         st.session_state["fat_emails_destino"] = config_db.get("emails_destino", "")
 
-    # Barra lateral de navegação do módulo
     with st.sidebar:
         caminho_logo_side = "Logo.png" if os.path.exists("Logo.png") else ("logo.png" if os.path.exists("logo.png") else None)
         if caminho_logo_side:
@@ -250,7 +247,225 @@ def executar():
         st.markdown("---")
         st.caption("© 2026 Globex Multimodal")
 
-    # Tela 1: Novo ou Editar Faturamento
     if opcao == "Novo / Editar Faturamento":
         st.markdown("<h1 style='text-align: center; color: #0c3547;'>📝 Gestão de Regras de Faturamento</h1>", unsafe_allow_html=True)
-        st.markdown("<p style='text-align: center;
+        st.markdown("<p style='text-align: center; color: #666;'>Cadastre novos faturamentos (via Contratos ou Manual Avulso) ou edite lançamentos existentes.</p>", unsafe_allow_html=True)
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        modo = st.radio("Modo de Operação:", ["Novo Faturamento", "Cadastro Manual (Avulso)", "Editar Faturamento Existente"], horizontal=True)
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        if modo == "Novo Faturamento":
+            try:
+                res_contratos = supabase.table("contratos").select("*").execute()
+                lista_contratos = res_contratos.data if res_contratos and res_contratos.data else []
+            except Exception:
+                lista_contratos = []
+
+            propostas_ja_cadastradas = []
+            try:
+                res_fat_todos = supabase.table("faturamentos").select("id_contrato").execute()
+                if res_fat_todos and res_fat_todos.data:
+                    propostas_ja_cadastradas = [str(item['id_contrato']) for item in res_fat_todos.data]
+            except Exception:
+                pass
+
+            contratos_disponiveis = [
+                c for c in lista_contratos 
+                if str(c['num_contrato']) not in propostas_ja_cadastradas and str(c['id']) not in propostas_ja_cadastradas
+            ]
+
+            if not lista_contratos:
+                st.warning("⚠️ Nenhum contrato encontrado na base de dados. Utilize o 'Cadastro Manual (Avulso)' ao lado.")
+            elif not contratos_disponiveis:
+                st.info("💡 Todos os contratos já possuem faturamento configurado ou foram ignorados. Utilize o 'Cadastro Manual (Avulso)' para novos lançamentos.")
+            else:
+                col_sel1, col_sel2 = st.columns([3, 1])
+                with col_sel1:
+                    contrato_escolhido = st.selectbox(
+                        "Selecione o Contrato *",
+                        contratos_disponiveis,
+                        format_func=lambda c: f"Proposta Nº {c['num_contrato']} - {c['cliente']}"
+                    )
+                with col_sel2:
+                    st.markdown("<br>", unsafe_allow_html=True)
+                    if st.button("🗑️ Ignorar Contrato", key="btn_ignorar_contrato"):
+                        try:
+                            reg_ignorado = {
+                                "id_contrato": str(contrato_escolhido['num_contrato']),
+                                "cliente": contrato_escolhido['cliente'],
+                                "condicao": "Fim do mês",
+                                "inicio_periodo": str(datetime.now().date()),
+                                "status": "Ignorado",
+                                "alerta_enviado": 0,
+                                "pular_mes_atual": False
+                            }
+                            supabase.table("faturamentos").insert(reg_ignorado).execute()
+                            st.success(f"Proposta Nº {contrato_escolhido['num_contrato']} ignorada da fila!")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Erro ao ignorar contrato: {e}")
+                
+                numero_proposta = str(contrato_escolhido['num_contrato'])
+                cliente_nome = contrato_escolhido['cliente']
+                email_cobranca = contrato_escolhido.get('email_cliente', '')
+
+                st.markdown("<br>", unsafe_allow_html=True)
+                st.subheader("⚙️ Regras e Condições")
+
+                col_c1, col_c2 = st.columns(2)
+                with col_c1:
+                    condicao = st.selectbox(
+                        "Condição de Faturamento *",
+                        [
+                            "30 dias após inicio",
+                            "Data Fixa",
+                            "Penúltimo dia do mês",
+                            "Fim do mês",
+                            "1º dia útil do mês"
+                        ]
+                    )
+                    
+                    dia_fixo = 10
+                    if condicao == "Data Fixa":
+                        dia_fixo = st.number_input("Dia do mês para faturar:", min_value=1, max_value=31, value=10)
+
+                with col_c2:
+                    inicio_periodo = st.date_input("Início do Período de Faturamento *", datetime.now())
+                    pular_mes_atual = st.checkbox("Pular faturamento do mês atual (começar a partir do mês seguinte)", key="pular_novo")
+
+                data_prevista_preview = calcular_previsao_faturamento(condicao, inicio_periodo, dia_fixo, pular_mes_atual)
+                st.info(f"📅 Previsão de Faturamento Calculada: **{data_prevista_preview.strftime('%d/%m/%Y')}**")
+
+                if st.button("💾 Salvar Regra de Faturamento", key="btn_salvar_fat"):
+                    try:
+                        res_dup = supabase.table("faturamentos").select("id_contrato").eq("id_contrato", numero_proposta).execute()
+                        ja_existe = res_dup.data if res_dup and res_dup.data else []
+                    except Exception:
+                        ja_existe = []
+
+                    if ja_existe:
+                        st.error(f"❌ Erro: Já existe um faturamento registado com o número de proposta '{numero_proposta}'. Proibido duplicar propostas!")
+                    else:
+                        try:
+                            novo_reg = {
+                                "id_contrato": numero_proposta,
+                                "cliente": cliente_nome,
+                                "condicao": condicao,
+                                "dia_fixo": dia_fixo,
+                                "inicio_periodo": str(inicio_periodo),
+                                "email_cliente": email_cobranca,
+                                "status": "Ativo",
+                                "alerta_enviado": 0,
+                                "pular_mes_atual": pular_mes_atual
+                            }
+                            supabase.table("faturamentos").insert(novo_reg).execute()
+                            st.success("Regra de faturamento guardada com sucesso!")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Erro ao salvar no Supabase: {e}")
+
+        elif modo == "Cadastro Manual (Avulso)":
+            st.markdown("### ✍️ Inserção Manual de Contrato / Proposta")
+            st.markdown("<p style='color: #666;'>Preencha os campos abaixo livremente. Este registo ficará exclusivo no Gestor de Faturamentos.</p>", unsafe_allow_html=True)
+            st.markdown("<br>", unsafe_allow_html=True)
+
+            col_m1, col_m2 = st.columns(2)
+            with col_m1:
+                numero_proposta = st.text_input("Número da Proposta / Contrato *", placeholder="Ex: PROP-2026-99")
+            with col_m2:
+                cliente_nome = st.text_input("Nome do Cliente *", placeholder="Nome da Empresa")
+
+            st.markdown("<br>", unsafe_allow_html=True)
+            st.subheader("⚙️ Regras e Condições")
+
+            col_c1, col_c2 = st.columns(2)
+            with col_c1:
+                condicao_man = st.selectbox(
+                    "Condição de Faturamento *",
+                    [
+                        "30 dias após inicio",
+                        "Data Fixa",
+                        "Penúltimo dia do mês",
+                        "Fim do mês",
+                        "1º dia útil do mês"
+                    ],
+                    key="cond_man"
+                )
+                
+                dia_fixo_man = 10
+                if condicao_man == "Data Fixa":
+                    dia_fixo_man = st.number_input("Dia do mês para faturar:", min_value=1, max_value=31, value=10, key="dia_fixo_man")
+
+            with col_c2:
+                inicio_periodo_man = st.date_input("Início do Período de Faturamento *", datetime.now(), key="inicio_man")
+                pular_mes_man = st.checkbox("Pular faturamento do mês atual (começar a partir do mês seguinte)", key="pular_man_avulso")
+
+            data_prevista_preview_man = calcular_previsao_faturamento(condicao_man, inicio_periodo_man, dia_fixo_man, pular_mes_man)
+            st.info(f"📅 Previsão de Faturamento Calculada: **{data_prevista_preview_man.strftime('%d/%m/%Y')}**")
+
+            if st.button("💾 Salvar Regra de Faturamento Manual", key="btn_salvar_fat_manual"):
+                if not numero_proposta or not cliente_nome:
+                    st.error("Por favor, preencha todos os campos obrigatórios (*).")
+                else:
+                    try:
+                        res_dup_man = supabase.table("faturamentos").select("id_contrato").eq("id_contrato", str(numero_proposta).strip()).execute()
+                        ja_existe_man = res_dup_man.data if res_dup_man and res_dup_man.data else []
+                    except Exception:
+                        ja_existe_man = []
+
+                    if ja_existe_man:
+                        st.error(f"❌ Erro: Já existe um faturamento registado com o número de proposta '{numero_proposta}'. O sistema não permite números de propostas duplicados!")
+                    else:
+                        try:
+                            novo_reg_manual = {
+                                "id_contrato": str(numero_proposta).strip(),
+                                "cliente": cliente_nome,
+                                "condicao": condicao_man,
+                                "dia_fixo": dia_fixo_man,
+                                "inicio_periodo": str(inicio_periodo_man),
+                                "email_cliente": "",
+                                "status": "Ativo",
+                                "alerta_enviado": 0,
+                                "pular_mes_atual": pular_mes_man
+                            }
+                            supabase.table("faturamentos").insert(novo_reg_manual).execute()
+                            st.success(f"Regra manual para '{cliente_nome}' guardada com sucesso na Gestão de Faturamentos!")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Erro ao salvar no Supabase: {e}")
+
+        else:
+            df_ativos = pd.DataFrame()
+            try:
+                res_ativos = supabase.table("faturamentos").select("*").eq("status", "Ativo").execute()
+                if res_ativos and res_ativos.data:
+                    df_ativos = pd.DataFrame(res_ativos.data)
+            except Exception:
+                pass
+
+            if df_ativos.empty:
+                st.info("Nenhum faturamento ativo disponível para edição.")
+            else:
+                fat_selecionado_id = st.selectbox(
+                    "Selecione o Faturamento Ativo para Editar:",
+                    df_ativos['id'].tolist(),
+                    format_func=lambda x: f"Proposta Nº {df_ativos[df_ativos['id']==x]['id_contrato'].values[0]} - {df_ativos[df_ativos['id']==x]['cliente'].values[0]}"
+                )
+
+                reg_atual = df_ativos[df_ativos['id'] == fat_selecionado_id].iloc[0]
+
+                st.markdown(f"**Cliente:** {reg_atual['cliente']} | **Proposta Nº:** {reg_atual['id_contrato']}")
+                st.markdown("<br>", unsafe_allow_html=True)
+                st.subheader("⚙️ Atualizar Regras e Condições")
+
+                condicoes_lista = [
+                    "30 dias após inicio",
+                    "Data Fixa",
+                    "Penúltimo dia do mês",
+                    "Fim do mês",
+                    "1º dia útil do mês"
+                ]
+                idx_cond = condicoes_lista.index(reg_atual['condicao']) if reg_atual['condicao'] in condicoes_lista else 0
+
+                col_e1, col_
