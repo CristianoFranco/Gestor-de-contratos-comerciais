@@ -51,7 +51,7 @@ def executar():
     if "fat_emails_destino" not in st.session_state:
         st.session_state["fat_emails_destino"] = config_db.get("emails_destino", "")
 
-    def enviar_email_para_todos(provedor, email_remetente, senha, lista_destinos, assunto, mensagem, cliente, proposta):
+    def enviar_email_parse(provedor, email_remetente, senha, lista_destinos, assunto, mensagem, cliente, proposta):
         sucessos = 0
         erros = []
         try:
@@ -110,61 +110,64 @@ def executar():
                 data_obj += timedelta(days=1)
         return data_obj
 
-    def calcular_previsao_faturamento(condicao, inicio_dt, dia_fixo=10):
+    def calcular_previsao_faturamento(condicao, inicio_dt, dia_fixo=10, pular_mes_atual=False):
         if isinstance(inicio_dt, str):
             inicio_dt = datetime.strptime(inicio_dt, "%Y-%m-%d").date()
 
+        # Se a flag de pular mês estiver ativa, define uma base no mês seguinte
+        base_dt = inicio_dt
+        if pular_mes_atual:
+            mes_seguinte = inicio_dt.month % 12 + 1
+            ano_seguinte = inicio_dt.year + (1 if inicio_dt.month == 12 else 0)
+            base_dt = datetime(ano_seguinte, mes_seguinte, min(inicio_dt.day, calendar.monthrange(ano_seguinte, mes_seguinte)[1])).date()
+
         if condicao == "30 dias após inicio":
-            data_fatura = inicio_dt + timedelta(days=30)
+            data_fatura = base_dt + timedelta(days=30)
             data_fatura = ajustar_dia_util(data_fatura, "avancar")
         
         elif condicao == "Data Fixa":
-            d_fixo = min(int(dia_fixo), calendar.monthrange(inicio_dt.year, inicio_dt.month)[1])
-            data_fatura = datetime(inicio_dt.year, inicio_dt.month, d_fixo).date()
-            if data_fatura < inicio_dt:
-                mes_prox = inicio_dt.month % 12 + 1
-                ano_prox = inicio_dt.year + (1 if inicio_dt.month == 12 else 0)
+            d_fixo = min(int(dia_fixo), calendar.monthrange(base_dt.year, base_dt.month)[1])
+            data_fatura = datetime(base_dt.year, base_dt.month, d_fixo).date()
+            if data_fatura < base_dt:
+                mes_prox = base_dt.month % 12 + 1
+                ano_prox = base_dt.year + (1 if base_dt.month == 12 else 0)
                 d_fixo_prox = min(int(dia_fixo), calendar.monthrange(ano_prox, mes_prox)[1])
                 data_fatura = datetime(ano_prox, mes_prox, d_fixo_prox).date()
             data_fatura = ajustar_dia_util(data_fatura, "retroceder")
         
         elif condicao == "1º dia útil do mês":
-            # 1º dia útil do mês atual
-            primeiro_dia = datetime(inicio_dt.year, inicio_dt.month, 1).date()
+            primeiro_dia = datetime(base_dt.year, base_dt.month, 1).date()
             data_fatura = ajustar_dia_util(primeiro_dia, "avancar")
-            # Se a data de início for posterior ao 1º dia útil do mês atual, passa para o mês seguinte
-            if inicio_dt > data_fatura:
-                mes_prox = inicio_dt.month % 12 + 1
-                ano_prox = inicio_dt.year + (1 if inicio_dt.month == 12 else 0)
+            if not pular_mes_atual and base_dt > data_fatura:
+                mes_prox = base_dt.month % 12 + 1
+                ano_prox = base_dt.year + (1 if base_dt.month == 12 else 0)
                 primeiro_dia_prox = datetime(ano_prox, mes_prox, 1).date()
                 data_fatura = ajustar_dia_util(primeiro_dia_prox, "avancar")
         
         elif condicao == "Penúltimo dia do mês":
-            ultimo_dia_num = calendar.monthrange(inicio_dt.year, inicio_dt.month)[1]
-            penultimo_dia = datetime(inicio_dt.year, inicio_dt.month, ultimo_dia_num - 1).date()
+            ultimo_dia_num = calendar.monthrange(base_dt.year, base_dt.month)[1]
+            penultimo_dia = datetime(base_dt.year, base_dt.month, ultimo_dia_num - 1).date()
             data_fatura = ajustar_dia_util(penultimo_dia, "retroceder")
-            # Se a data de início for posterior ao penúltimo dia útil do mês atual, passa para o mês seguinte
-            if inicio_dt > data_fatura:
-                mes_prox = inicio_dt.month % 12 + 1
-                ano_prox = inicio_dt.year + (1 if inicio_dt.month == 12 else 0)
+            if not pular_mes_atual and base_dt > data_fatura:
+                mes_prox = base_dt.month % 12 + 1
+                ano_prox = base_dt.year + (1 if base_dt.month == 12 else 0)
                 ultimo_dia_prox = calendar.monthrange(ano_prox, mes_prox)[1]
                 penultimo_prox = datetime(ano_prox, mes_prox, ultimo_dia_prox - 1).date()
                 data_fatura = ajustar_dia_util(penultimo_prox, "retroceder")
         
         elif condicao == "Fim do mês":
-            ultimo_dia_num = calendar.monthrange(inicio_dt.year, inicio_dt.month)[1]
-            ultimo_dia = datetime(inicio_dt.year, inicio_dt.month, ultimo_dia_num).date()
+            ultimo_dia_num = calendar.monthrange(base_dt.year, base_dt.month)[1]
+            ultimo_dia = datetime(base_dt.year, base_dt.month, ultimo_dia_num).date()
             data_fatura = ajustar_dia_util(ultimo_dia, "retroceder")
-            # Se a data de início for posterior ao último dia útil do mês atual, passa para o mês seguinte
-            if inicio_dt > data_fatura:
-                mes_prox = inicio_dt.month % 12 + 1
-                ano_prox = inicio_dt.year + (1 if inicio_dt.month == 12 else 0)
+            if not pular_mes_atual and base_dt > data_fatura:
+                mes_prox = base_dt.month % 12 + 1
+                ano_prox = base_dt.year + (1 if base_dt.month == 12 else 0)
                 ultimo_dia_prox = calendar.monthrange(ano_prox, mes_prox)[1]
                 ultimo_prox = datetime(ano_prox, mes_prox, ultimo_dia_prox).date()
                 data_fatura = ajustar_dia_util(ultimo_prox, "retroceder")
         
         else:
-            data_fatura = inicio_dt
+            data_fatura = base_dt
         return data_fatura
 
     def executar_automacao_faturamentos():
@@ -195,9 +198,10 @@ def executar():
                 inicio_str = item['inicio_periodo']
                 alerta_enviado = item.get('alerta_enviado', 0)
                 dia_fixo = item.get('dia_fixo', 10)
+                pular_mes = item.get('pular_mes_atual', False)
 
                 inicio_dt = datetime.strptime(inicio_str, "%Y-%m-%d").date()
-                data_fatura = calcular_previsao_faturamento(condicao, inicio_dt, dia_fixo)
+                data_fatura = calcular_previsao_faturamento(condicao, inicio_dt, dia_fixo, pular_mes)
 
                 dias_restantes = (data_fatura - hoje).days
 
@@ -205,7 +209,7 @@ def executar():
                     assunto = f"[ALERTA OPERACIONAL] Preparação de Faturamento - Proposta Nº {num_prop} ({cliente})"
                     corpo = f"Atenção Equipa,\n\nO faturamento para o cliente {cliente} (Proposta Nº {num_prop}, Condição: {condicao}) tem data prevista para {data_fatura.strftime('%d/%m/%Y')}.\nFaltam 2 dias para a data limite de preparação de dados.\n\nAtenciosamente,\nGlobex Multimodal"
                     
-                    sucesso, err = enviar_email_para_todos(prov, remetente, senha, lista_destinos, assunto, corpo, cliente, num_prop)
+                    sucesso, err = enviar_email_parse(prov, remetente, senha, lista_destinos, assunto, corpo, cliente, num_prop)
                     if sucesso:
                         supabase.table("faturamentos").update({"alerta_enviado": 1}).eq("id", rid).execute()
                         disparos += 1
@@ -214,7 +218,7 @@ def executar():
                     assunto = f"[ALERTA OPERACIONAL] Véspera de Faturamento - Proposta Nº {num_prop} ({cliente})"
                     corpo = f"Atenção Equipa,\n\nO faturamento para o cliente {cliente} (Proposta Nº {num_prop}, Condição: {condicao}) tem data prevista para AMANHÃ ({data_fatura.strftime('%d/%m/%Y')}).\nCertifiquem-se de que os dados estão prontos.\n\nAtenciosamente,\nGlobex Multimodal"
                     
-                    sucesso, err = enviar_email_para_todos(prov, remetente, senha, lista_destinos, assunto, corpo, cliente, num_prop)
+                    sucesso, err = enviar_email_parse(prov, remetente, senha, lista_destinos, assunto, corpo, cliente, num_prop)
                     if sucesso:
                         supabase.table("faturamentos").update({"alerta_enviado": 2}).eq("id", rid).execute()
                         disparos += 1
@@ -223,7 +227,7 @@ def executar():
                     assunto = f"[URGENTE - HOJE] Prazo de Faturamento - Proposta Nº {num_prop} ({cliente})"
                     corpo = f"Atenção Equipa,\n\nO faturamento para o cliente {cliente} (Proposta Nº {num_prop}, Condição: {condicao}) tem o prazo de entrega PARA HOJE ({data_fatura.strftime('%d/%m/%Y')}).\n\nO faturamento está finalizado ou a ser finalizado? Por favor, verifiquem com urgência.\n\nAtenciosamente,\nGlobex Multimodal"
                     
-                    sucesso, err = enviar_email_para_todos(prov, remetente, senha, lista_destinos, assunto, corpo, cliente, num_prop)
+                    sucesso, err = enviar_email_parse(prov, remetente, senha, lista_destinos, assunto, corpo, cliente, num_prop)
                     if sucesso:
                         supabase.table("faturamentos").update({"alerta_enviado": 3}).eq("id", rid).execute()
                         disparos += 1
@@ -315,7 +319,9 @@ def executar():
                 with col_c2:
                     inicio_periodo = st.date_input("Início do Período de Faturamento *", datetime.now())
 
-                data_prevista_preview = calcular_previsao_faturamento(condicao, inicio_periodo, dia_fixo)
+                pular_mes_atual = st.checkbox("Pular faturamento do mês atual (começar a partir do mês seguinte)")
+
+                data_prevista_preview = calcular_previsao_faturamento(condicao, inicio_periodo, dia_fixo, pular_mes_atual)
                 st.info(f"📅 Previsão de Faturamento Calculada: **{data_prevista_preview.strftime('%d/%m/%Y')}**")
 
                 if st.button("💾 Salvar Regra de Faturamento", key="btn_salvar_fat"):
@@ -328,7 +334,8 @@ def executar():
                             "inicio_periodo": str(inicio_periodo),
                             "email_cliente": email_cobranca,
                             "status": "Ativo",
-                            "alerta_enviado": 0
+                            "alerta_enviado": 0,
+                            "pular_mes_atual": pular_mes_atual
                         }
                         supabase.table("faturamentos").insert(novo_reg).execute()
                         st.success("Regra de faturamento guardada com sucesso!")
@@ -371,7 +378,9 @@ def executar():
             with col_c2:
                 inicio_periodo_man = st.date_input("Início do Período de Faturamento *", datetime.now(), key="inicio_man")
 
-            data_prevista_preview_man = calcular_previsao_faturamento(condicao_man, inicio_periodo_man, dia_fixo_man)
+            pular_mes_man = st.checkbox("Pular faturamento do mês atual (começar a partir do mês seguinte)", key="pular_man")
+
+            data_prevista_preview_man = calcular_previsao_faturamento(condicao_man, inicio_periodo_man, dia_fixo_man, pular_mes_man)
             st.info(f"📅 Previsão de Faturamento Calculada: **{data_prevista_preview_man.strftime('%d/%m/%Y')}**")
 
             if st.button("💾 Salvar Regra de Faturamento Manual", key="btn_salvar_fat_manual"):
@@ -387,7 +396,8 @@ def executar():
                             "inicio_periodo": str(inicio_periodo_man),
                             "email_cliente": "",
                             "status": "Ativo",
-                            "alerta_enviado": 0
+                            "alerta_enviado": 0,
+                            "pular_mes_atual": pular_mes_man
                         }
                         supabase.table("faturamentos").insert(novo_reg_manual).execute()
                         st.success(f"Regra manual para '{cliente_nome}' guardada com sucesso na Gestão de Faturamentos!")
@@ -443,7 +453,10 @@ def executar():
                     dt_inicio_atual = datetime.strptime(reg_atual['inicio_periodo'], "%Y-%m-%d").date()
                     novo_inicio_periodo = st.date_input("Novo Início do Período *", value=dt_inicio_atual)
 
-                nova_data_preview = calcular_previsao_faturamento(nova_condicao, novo_inicio_periodo, novo_dia_fixo)
+                pular_atual_val = bool(reg_atual.get('pular_mes_atual', False))
+                novo_pular_mes = st.checkbox("Pular faturamento do mês atual (começar a partir do mês seguinte)", value=pular_atual_val, key="pular_edit")
+
+                nova_data_preview = calcular_previsao_faturamento(nova_condicao, novo_inicio_periodo, novo_dia_fixo, novo_pular_mes)
                 st.info(f"📅 Nova Previsão de Faturamento Calculada: **{nova_data_preview.strftime('%d/%m/%Y')}**")
 
                 if st.button("💾 Atualizar Regra de Faturamento", key="btn_atualizar_fat"):
@@ -452,6 +465,7 @@ def executar():
                             "condicao": nova_condicao,
                             "dia_fixo": novo_dia_fixo,
                             "inicio_periodo": str(novo_inicio_periodo),
+                            "pular_mes_atual": novo_pular_mes,
                             "alerta_enviado": 0
                         }
                         supabase.table("faturamentos").update(dados_atualizados).eq("id", fat_selecionado_id).execute()
@@ -501,7 +515,8 @@ def executar():
                 dt_prev = calcular_previsao_faturamento(
                     row['condicao'], 
                     row['inicio_periodo'], 
-                    row.get('dia_fixo', 10)
+                    row.get('dia_fixo', 10),
+                    row.get('pular_mes_atual', False)
                 )
                 previsoes.append(dt_prev.strftime('%d/%m/%Y'))
             
