@@ -642,4 +642,9 @@ def executar():
             st.warning(f"Aviso: Não foi possível carregar os logs (verifique se a tabela 'logs_faturamento' foi criada no Supabase). Erro: {e}")
 
         if df_logs.empty:
-            st.info("Nenhum log de mensagem
+            st.info("Nenhum log de mensagem registado até ao momento.")
+        else:
+            display_logs = df_logs[['data_envio', 'cliente', 'proposta', 'status', 'mensagem']].copy()
+            display_logs.columns = ['Data / Hora do Envio', 'Cliente', 'Proposta Nº', 'Status do Envio', 'Mensagem Enviada']
+            
+            st.dataframe(display_logs, use_container_width=True, hide_index=True)
