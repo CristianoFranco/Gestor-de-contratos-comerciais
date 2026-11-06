@@ -476,14 +476,14 @@ def executar():
                             pass
 
                         if faturamento_ativo_encontrado:
-                            st.error("🚫 **Operação Bloqueada:** Não é possível encerrar este contrato pois existe um faturamento ativo vinculado a ele. Por favor, vá ao gestor de faturamentos e encerre o faturamento primeiro.")
+                            st.error("🚫 **Operação Bloqueada:** Não foi possível excluir o contrato devido a haver faturamentos programados ou ativos vinculados. Por favor, encerre os faturamentos associados primeiro.")
                         else:
                             try:
                                 supabase.table("contratos").delete().eq("id", contrato_id).execute()
                                 st.success("Contrato encerrado e removido do painel com sucesso!")
                                 st.rerun()
                             except Exception as e:
-                                st.error("⚠️ Não foi possível excluir o contrato devido a uma restrição de integridade no banco de dados. Verifique se existem registos dependentes.")
+                                st.error("🚫 **Operação Bloqueada:** Não foi possível excluir o contrato devido a haver faturamentos programados na base de dados.")
 
     # Tela 03: Configurações de E-mail
     elif opcao == "Configurações de E-mail":
