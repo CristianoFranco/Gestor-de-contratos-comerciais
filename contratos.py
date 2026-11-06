@@ -229,13 +229,22 @@ def executar():
             if df_edit.empty:
                 st.info("Nenhum contrato cadastrado.")
             else:
+                # Garante que há um contrato selecionado válido no session_state
+                lista_ids = df_edit['id'].tolist()
+                if "selected_contract_id" not in st.session_state or st.session_state["selected_contract_id"] not in lista_ids:
+                    st.session_state["selected_contract_id"] = lista_ids[0]
+
                 cid_edit = st.selectbox(
                     "Selecione o Contrato:",
-                    df_edit['id'].tolist(),
+                    lista_ids,
+                    index=lista_ids.index(st.session_state["selected_contract_id"]),
                     key="select_contrato_editar",
                     format_func=lambda x: f"ID {x} - {df_edit[df_edit['id']==x]['cliente'].values[0]} ({df_edit[df_edit['id']==x]['num_contrato'].values[0]})"
                 )
                 
+                # Atualiza o estado com a seleção atual
+                st.session_state["selected_contract_id"] = cid_edit
+
                 c_data = df_edit[df_edit['id'] == cid_edit].iloc[0]
                 
                 col1, col2 = st.columns(2)
@@ -283,10 +292,10 @@ def executar():
                                 }
                                 supabase.table("contratos").update(dados_atualizados).eq("id", cid_edit).execute()
                                 
-                                # Limpa a seleção do estado para resetar a tela corretamente
-                                if "select_contrato_editar" in st.session_state:
-                                    del st.session_state["select_contrato_editar"]
-                                    
+                                # Limpa o estado selecionado para forçar reset limpo
+                                if "selected_contract_id" in st.session_state:
+                                    del st.session_state["selected_contract_id"]
+                                
                                 st.success("Atualizado com sucesso!")
                                 st.rerun()
                         except Exception as e:
@@ -300,8 +309,8 @@ def executar():
                     try:
                         supabase.table("contratos").delete().eq("id", cid_edit).execute()
                         
-                        if "select_contrato_editar" in st.session_state:
-                            del st.session_state["select_contrato_editar"]
+                        if "selected_contract_id" in st.session_state:
+                            del st.session_state["selected_contract_id"]
                             
                         st.success("Contrato excluído!")
                         st.rerun()
