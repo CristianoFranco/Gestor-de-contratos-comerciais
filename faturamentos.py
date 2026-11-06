@@ -282,13 +282,33 @@ def executar():
             if not lista_contratos:
                 st.warning("⚠️ Nenhum contrato encontrado na base de dados. Utilize o 'Cadastro Manual (Avulso)' ao lado.")
             elif not contratos_disponiveis:
-                st.info("💡 Todos os contratos já possuem (ou já tiveram) faturamento configurado. Utilize o 'Cadastro Manual (Avulso)' para novos lançamentos.")
+                st.info("💡 Todos os contratos já possuem faturamento configurado ou foram ignorados. Utilize o 'Cadastro Manual (Avulso)' para novos lançamentos.")
             else:
-                contrato_escolhido = st.selectbox(
-                    "Selecione o Contrato *",
-                    contratos_disponiveis,
-                    format_func=lambda c: f"Proposta Nº {c['num_contrato']} - {c['cliente']}"
-                )
+                col_sel1, col_sel2 = st.columns([3, 1])
+                with col_sel1:
+                    contrato_escolhido = st.selectbox(
+                        "Selecione o Contrato *",
+                        contratos_disponiveis,
+                        format_func=lambda c: f"Proposta Nº {c['num_contrato']} - {c['cliente']}"
+                    )
+                with col_sel2:
+                    st.markdown("<br>", unsafe_allow_html=True)
+                    if st.button("🗑️ Ignorar Contrato", key="btn_ignorar_contrato"):
+                        try:
+                            reg_ignorado = {
+                                "id_contrato": str(contrato_escolhido['num_contrato']),
+                                "cliente": contrato_escolhido['cliente'],
+                                "condicao": "Fim do mês",
+                                "inicio_periodo": str(datetime.now().date()),
+                                "status": "Ignorado",
+                                "alerta_enviado": 0,
+                                "pular_mes_atual": False
+                            }
+                            supabase.table("faturamentos").insert(reg_ignorado).execute()
+                            st.success(f"Proposta Nº {contrato_escolhido['num_contrato']} ignorada da fila!")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Erro ao ignorar contrato: {e}")
                 
                 numero_proposta = str(contrato_escolhido['num_contrato'])
                 cliente_nome = contrato_escolhido['cliente']
@@ -322,7 +342,6 @@ def executar():
                 st.info(f"📅 Previsão de Faturamento Calculada: **{data_prevista_preview.strftime('%d/%m/%Y')}**")
 
                 if st.button("💾 Salvar Regra de Faturamento", key="btn_salvar_fat"):
-                    # Validação de duplicidade na base
                     try:
                         res_dup = supabase.table("faturamentos").select("id_contrato").eq("id_contrato", numero_proposta).execute()
                         ja_existe = res_dup.data if res_dup and res_dup.data else []
@@ -393,7 +412,6 @@ def executar():
                 if not numero_proposta or not cliente_nome:
                     st.error("Por favor, preencha todos os campos obrigatórios (*).")
                 else:
-                    # Validação estrita de duplicidade para cadastro manual
                     try:
                         res_dup_man = supabase.table("faturamentos").select("id_contrato").eq("id_contrato", str(numero_proposta).strip()).execute()
                         ja_existe_man = res_dup_man.data if res_dup_man and res_dup_man.data else []
@@ -592,42 +610,4 @@ def executar():
             st.session_state["fat_emails_destino"] = st.session_state["area_fat_dest"]
 
             if not st.session_state["fat_email_remetente"] or not st.session_state["fat_senha_remetente"] or not st.session_state["fat_emails_destino"]:
-                st.error("Por favor, preencha todos os campos de e-mail.")
-            else:
-                try:
-                    dados_cfg = {
-                        "id": 1,
-                        "provedor": st.session_state["fat_provedor"],
-                        "email_remetente": st.session_state["fat_email_remetente"],
-                        "senha_remetente": st.session_state["fat_senha_remetente"],
-                        "emails_destino": st.session_state["fat_emails_destino"]
-                    }
-                    supabase.table("config_email_faturamento").upsert(dados_cfg).execute()
-                    st.success("Configurações de e-mail guardadas com sucesso no Supabase!")
-                except Exception as e:
-                    st.error(f"Erro ao salvar configurações: {e}")
-
-    # Tela 4: Gerenciar Logs de Mensagens
-    elif opcao == "Gerenciar Logs de Mensagens":
-        st.markdown("<h1 style='text-align: center; color: #0c3547;'>📊 Histórico e Logs de Mensagens</h1>", unsafe_allow_html=True)
-        st.markdown("<p style='text-align: center; color: #666;'>Consulte os registos de todas as notificações e alertas operacionais enviados pelo sistema.</p>", unsafe_allow_html=True)
-        st.markdown("<br>", unsafe_allow_html=True)
-
-        if st.button("🔄 Atualizar Logs"):
-            st.rerun()
-
-        df_logs = pd.DataFrame()
-        try:
-            res_logs = supabase.table("logs_faturamento").select("*").order("data_envio", desc=True).execute()
-            if res_logs and res_logs.data:
-                df_logs = pd.DataFrame(res_logs.data)
-        except Exception as e:
-            st.warning(f"Aviso: Não foi possível carregar os logs (verifique se a tabela 'logs_faturamento' foi criada no Supabase). Erro: {e}")
-
-        if df_logs.empty:
-            st.info("Nenhum log de mensagem registado até ao momento.")
-        else:
-            display_logs = df_logs[['data_envio', 'cliente', 'proposta', 'status', 'mensagem']].copy()
-            display_logs.columns = ['Data / Hora do Envio', 'Cliente', 'Proposta Nº', 'Status do Envio', 'Mensagem Enviada']
-            
-            st.dataframe(display_logs, use_container_width=True, hide_index=True)
+                st.error("Por favor, preencha
