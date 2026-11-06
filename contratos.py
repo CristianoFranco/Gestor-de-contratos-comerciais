@@ -211,6 +211,7 @@ def executar():
                         }
                         supabase.table("contratos").insert(novo_registro).execute()
                         st.success("Contrato cadastrado com sucesso!")
+                        st.rerun()
                     except Exception as e:
                         if "duplicate key" in str(e).lower() or "unique constraint" in str(e).lower():
                             st.error("Erro: Número de contrato já cadastrado.")
@@ -231,6 +232,7 @@ def executar():
                 cid_edit = st.selectbox(
                     "Selecione o Contrato:",
                     df_edit['id'].tolist(),
+                    key="select_contrato_editar",
                     format_func=lambda x: f"ID {x} - {df_edit[df_edit['id']==x]['cliente'].values[0]} ({df_edit[df_edit['id']==x]['num_contrato'].values[0]})"
                 )
                 
@@ -280,6 +282,11 @@ def executar():
                                     "telefone_cliente": novo_tel
                                 }
                                 supabase.table("contratos").update(dados_atualizados).eq("id", cid_edit).execute()
+                                
+                                # Limpa a seleção do estado para resetar a tela corretamente
+                                if "select_contrato_editar" in st.session_state:
+                                    del st.session_state["select_contrato_editar"]
+                                    
                                 st.success("Atualizado com sucesso!")
                                 st.rerun()
                         except Exception as e:
@@ -292,6 +299,10 @@ def executar():
                 if st.button("🗑️ Excluir Contrato Permanentemente", key=f"btn_excluir_{cid_edit}"):
                     try:
                         supabase.table("contratos").delete().eq("id", cid_edit).execute()
+                        
+                        if "select_contrato_editar" in st.session_state:
+                            del st.session_state["select_contrato_editar"]
+                            
                         st.success("Contrato excluído!")
                         st.rerun()
                     except Exception as e:
