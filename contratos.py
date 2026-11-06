@@ -229,7 +229,6 @@ def executar():
             if df_edit.empty:
                 st.info("Nenhum contrato cadastrado.")
             else:
-                # Garante que há um contrato selecionado válido no session_state
                 lista_ids = df_edit['id'].tolist()
                 if "selected_contract_id" not in st.session_state or st.session_state["selected_contract_id"] not in lista_ids:
                     st.session_state["selected_contract_id"] = lista_ids[0]
@@ -242,9 +241,7 @@ def executar():
                     format_func=lambda x: f"ID {x} - {df_edit[df_edit['id']==x]['cliente'].values[0]} ({df_edit[df_edit['id']==x]['num_contrato'].values[0]})"
                 )
                 
-                # Atualiza o estado com a seleção atual
                 st.session_state["selected_contract_id"] = cid_edit
-
                 c_data = df_edit[df_edit['id'] == cid_edit].iloc[0]
                 
                 col1, col2 = st.columns(2)
@@ -268,8 +265,15 @@ def executar():
                     d_alvo = ultimo_d
                 nova_data_fim = datetime(a_alvo, m_alvo, d_alvo).date()
 
-                st.info(f"📅 Nova Data Fim Recalculada: {nova_data_fim.strftime('%d/%m/%Y')}")
+                st.info(f"📅 Nova Data Fim Recalculada pela Vigência: {nova_data_fim.strftime('%d/%m/%Y')}")
                 
+                # ADICIONADO: Opção para redefinir a data final manualmente caso queira antecipar o término
+                forcar_data_fim = st.checkbox("Definir Data Limite de Vigência Manualmente (Término Antecipado / Rescisão)", key=f"chk_forcar_{cid_edit}")
+                if forcar_data_fim:
+                    dt_atual_fim = datetime.strptime(c_data['data_fim'], "%Y-%m-%d").date() if c_data.get('data_fim') else nova_data_fim
+                    nova_data_fim = st.date_input("Nova Data Final de Vigência *", value=dt_atual_fim, key=f"input_nova_fim_{cid_edit}")
+                    st.warning(f"⚠️ A data limite do contrato foi fixada manualmente em: **{nova_data_fim.strftime('%d/%m/%Y')}**. O faturamento respeitará este limite.")
+
                 if st.button("💾 Salvar Alterações", key=f"btn_salvar_edit_{cid_edit}"):
                     if not novo_cliente or not novo_num_contrato or not novo_email:
                         st.error("Preencha todos os campos obrigatórios (*).")
@@ -292,11 +296,10 @@ def executar():
                                 }
                                 supabase.table("contratos").update(dados_atualizados).eq("id", cid_edit).execute()
                                 
-                                # Limpa o estado selecionado para forçar reset limpo
                                 if "selected_contract_id" in st.session_state:
                                     del st.session_state["selected_contract_id"]
-                                
-                                st.success("Atualizado com sucesso!")
+                                    
+                                st.success("Contrato atualizado com sucesso! A data limite foi aplicada e integrada com o Gestor de Faturamentos.")
                                 st.rerun()
                         except Exception as e:
                             st.error(f"Erro ao atualizar: {e}")
@@ -308,10 +311,8 @@ def executar():
                 if st.button("🗑️ Excluir Contrato Permanentemente", key=f"btn_excluir_{cid_edit}"):
                     try:
                         supabase.table("contratos").delete().eq("id", cid_edit).execute()
-                        
                         if "selected_contract_id" in st.session_state:
                             del st.session_state["selected_contract_id"]
-                            
                         st.success("Contrato excluído!")
                         st.rerun()
                     except Exception as e:
