@@ -1,20 +1,29 @@
-name: Supabase Keep Alive
+name: Automação Diária Geral (Contratos e Faturamentos)
 
 on:
   schedule:
-    - cron: '0 8 * * *'
-  workflow_dispatch:
+    - cron: '0 8 * * *' # Executa todos os dias às 08:00 UTC
+  workflow_dispatch: # Permite disparar manualmente a qualquer momento pela aba Actions do GitHub
 
 jobs:
-  ping-supabase:
+  run-background-tasks:
     runs-on: ubuntu-latest
     steps:
-      - name: Ping Supabase REST API
+      - name: Aceder ao Código do Repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Instalar Dependências
+        run: |
+          pip install pandas supabase
+
+      - name: Executar Script Unificado
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
         run: |
-          curl -s -o /dev/null -w "%{http_code}\n" \
-            -H "apikey: $SUPABASE_ANON_KEY" \
-            -H "Authorization: Bearer $SUPABASE_ANON_KEY" \
-            "$SUPABASE_URL/rest/v1/"
+          python run_cron.py
