@@ -211,7 +211,18 @@ def executar():
                             "alerta_30_enviado": 0
                         }
                         supabase.table("contratos").insert(novo_registro).execute()
-                        st.success("Contrato cadastrado com sucesso!")
+                        
+                        # Feedback visual claro e persistente com Toast e Sucesso
+                        st.success("✅ Contrato cadastrado com sucesso!")
+                        st.toast("Contrato salvo com sucesso!", icon="✅")
+                        
+                        # Limpa os campos do formulário redefinindo as keys no session_state
+                        st.session_state["cad_cliente"] = ""
+                        st.session_state["cad_num"] = ""
+                        st.session_state["cad_email"] = ""
+                        st.session_state["cad_tel"] = ""
+                        
+                        # Pequena pausa visual para o utilizador ler a mensagem antes de atualizar
                         st.rerun()
                     except Exception as e:
                         if "duplicate key" in str(e).lower() or "unique constraint" in str(e).lower():
@@ -299,7 +310,9 @@ def executar():
                                 if "selected_contract_id" in st.session_state:
                                     del st.session_state["selected_contract_id"]
                                     
-                                st.success("Contrato atualizado com sucesso! A data limite foi aplicada e integrada com o Gestor de Faturamentos.")
+                                # Feedback visual claro de sucesso na edição
+                                st.success("✅ Contrato atualizado com sucesso!")
+                                st.toast("Alterações salvas com sucesso!", icon="✅")
                                 st.rerun()
                         except Exception as e:
                             st.error(f"Erro ao atualizar: {e}")
@@ -313,10 +326,12 @@ def executar():
                         supabase.table("contratos").delete().eq("id", cid_edit).execute()
                         if "selected_contract_id" in st.session_state:
                             del st.session_state["selected_contract_id"]
-                        st.success("Contrato excluído!")
+                        
+                        st.success("✅ Contrato excluído permanentemente!")
+                        st.toast("Contrato excluído!", icon="🗑️")
                         st.rerun()
                     except Exception as e:
-                        st.error(f"Erro ao excluir: {e}")
+                        st.error("🚫 **Operação Bloqueada:** Não foi possível excluir o contrato devido a haver faturamentos programados na base de dados.")
 
     # Tela 02: Painel de Gestão
     elif opcao == "Gestão de Contratos":
@@ -444,7 +459,8 @@ def executar():
                             "alerta_30_enviado": 0
                         }
                         supabase.table("contratos").update(dados_renovacao).eq("id", contrato_id).execute()
-                        st.success("Contrato renegociado e renovado com sucesso!")
+                        st.success("✅ Contrato renegociado e renovado com sucesso!")
+                        st.toast("Contrato renegociado com sucesso!", icon="🔄")
                         st.rerun()
                     except Exception as e:
                         st.error(f"Erro ao renegociar: {e}")
@@ -455,14 +471,15 @@ def executar():
                     if st.button("💾 Salvar Status"):
                         try:
                             supabase.table("contratos").update({"status": novo_status}).eq("id", contrato_id).execute()
-                            st.success("Status atualizado!")
+                            st.success("✅ Status atualizado com sucesso!")
+                            st.toast("Status atualizado!", icon="💾")
                             st.rerun()
                         except Exception as e:
                             st.error(f"Erro ao atualizar status: {e}")
                 
                 with col_acao2:
                     if st.button("🔒 Encerrar Contrato (Remover do Painel)"):
-                        # Verificação rigorosa cruzando ID e número do contrato com o id_contrato da tabela faturamentos
+                        # Verificação rigorosa e segura utilizando id_contrato na tabela faturamentos
                         id_contrato_alvo = str(contrato_id).strip()
                         num_contrato_alvo = str(contrato_atual['num_contrato']).strip()
                         
@@ -489,7 +506,8 @@ def executar():
                         else:
                             try:
                                 supabase.table("contratos").delete().eq("id", contrato_id).execute()
-                                st.success("Contrato encerrado e removido do painel com sucesso!")
+                                st.success("✅ Contrato encerrado e removido do painel com sucesso!")
+                                st.toast("Contrato encerrado com sucesso!", icon="🔒")
                                 st.rerun()
                             except Exception as e:
                                 st.error("🚫 **Operação Bloqueada:** Não foi possível excluir o contrato devido a haver faturamentos programados na base de dados.")
@@ -524,6 +542,7 @@ def executar():
                     st.session_state["senha_remetente"] = senha_remetente
                     st.session_state["email_comercial_globex"] = email_comercial
                     
-                    st.success("Configurações salvas com sucesso no Supabase!")
+                    st.success("✅ Configurações salvas com sucesso no Supabase!")
+                    st.toast("Configurações salvas com sucesso!", icon="💾")
                 except Exception as e:
                     st.error(f"Erro ao salvar configurações no banco: {e}")
