@@ -34,7 +34,6 @@ if st.session_state["modulo_ativo"] == "home":
         with col_l2:
             st.image(caminho_logo, use_container_width=True)
 
-    # Margem superior ajustada para aproximar o título do logotipo com harmonia estética
     st.markdown("<h1 style='text-align: center; color: #0c3547; margin-top: -10px;'>Portal Corporativo - Globex Multimodal</h1>", unsafe_allow_html=True)
     st.markdown("<p style='text-align: center; color: #666; font-size: 18px;'>Selecione abaixo o sistema que deseja aceder:</p>", unsafe_allow_html=True)
     st.markdown("<br>", unsafe_allow_html=True)
