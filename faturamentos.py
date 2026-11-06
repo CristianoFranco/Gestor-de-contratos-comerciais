@@ -160,9 +160,9 @@ def executar_automacao_faturamentos(supabase, config_db):
             num_prop = item['id_contrato']
             condicao = item['condicao']
             inicio_str = item['inicio_periodo']
-            alerta_enviado = item.get('alerta_enviado', 0)
-            dia_fixo = item.get('dia_fixo', 10)
-            pular_mes = item.get('pular_mes_atual', False)
+            alerta_enviado = item.get('alerta_enviado', 0) or 0
+            dia_fixo = int(item['dia_fixo']) if (item.get('dia_fixo') is not None) else 10
+            pular_mes = bool(item.get('pular_mes_atual', False)) if item.get('pular_mes_atual') is not None else False
 
             inicio_dt = datetime.strptime(inicio_str, "%Y-%m-%d").date()
             data_fatura = calcular_previsao_faturamento(condicao, inicio_dt, dia_fixo, pular_mes)
@@ -468,4 +468,41 @@ def executar():
                 ]
                 idx_cond = condicoes_lista.index(reg_atual['condicao']) if reg_atual['condicao'] in condicoes_lista else 0
 
-                col_e1, col_
+                col_e1, col_e2 = st.columns(2)
+                with col_e1:
+                    nova_condicao = st.selectbox("Nova Condição de Faturamento *", condicoes_lista, index=idx_cond)
+                    
+                    novo_dia_fixo = 10
+                    if reg_atual.get('dia_fixo') is not None and pd.notna(reg_atual['dia_fixo']):
+                        novo_dia_fixo = int(reg_atual['dia_fixo'])
+                    
+                    if nova_condicao == "Data Fixa":
+                        novo_dia_fixo = st.number_input("Dia do mês para faturar:", min_value=1, max_value=31, value=novo_dia_fixo)
+
+                with col_e2:
+                    dt_inicio_atual = datetime.strptime(reg_atual['inicio_periodo'], "%Y-%m-%d").date()
+                    novo_inicio_periodo = st.date_input("Novo Início do Período *", value=dt_inicio_atual)
+                    pular_atual_val = bool(reg_atual.get('pular_mes_atual', False)) if reg_atual.get('pular_mes_atual') is not None else False
+                    novo_pular_mes = st.checkbox("Pular faturamento do mês atual (começar a partir do mês seguinte)", value=pular_atual_val, key="pular_edit")
+
+                nova_data_preview = calcular_previsao_faturamento(nova_condicao, novo_inicio_periodo, novo_dia_fixo, novo_pular_mes)
+                st.info(f"📅 Nova Previsão de Faturamento Calculada: **{nova_data_preview.strftime('%d/%m/%Y')}**")
+
+                if st.button("💾 Atualizar Regra de Faturamento", key="btn_atualizar_fat"):
+                    try:
+                        dados_atualizados = {
+                            "condicao": nova_condicao,
+                            "dia_fixo": novo_dia_fixo,
+                            "inicio_periodo": str(novo_inicio_periodo),
+                            "pular_mes_atual": novo_pular_mes,
+                            "alerta_enviado": 0
+                        }
+                        supabase.table("faturamentos").update(dados_atualizados).eq("id", fat_selecionado_id).execute()
+                        st.success("Regra de faturamento atualizada e sobrescrita com sucesso no Supabase!")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Erro ao atualizar no Supabase: {e}")
+
+    elif opcao == "Painel de Faturamentos Ativos":
+        st.markdown("<h1 style='text-align: center; color: #0c3547;'>💰 Painel de Faturamentos Ativos</h1>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align: center; color: #666;'>Acompanhe
