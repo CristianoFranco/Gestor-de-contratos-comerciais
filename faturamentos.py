@@ -146,13 +146,13 @@ def executar_automacao_faturamentos(supabase, config_db):
         response = supabase.table("faturamentos").select("*").eq("status", "Ativo").execute()
         registros = response.data if response and response.data else []
 
-        # Buscar mapa de vencimentos dos contratos para validação cruzada
-        res_cont = supabase.table("contratos").select("num_contrato, vencimento").execute()
+        # Consulta correta utilizando 'data_fim' da tabela contratos
+        res_cont = supabase.table("contratos").select("num_contrato, data_fim").execute()
         map_vencimentos = {}
         if res_cont and res_cont.data:
             for c in res_cont.data:
-                if c.get('num_contrato') and c.get('vencimento'):
-                    map_vencimentos[str(c['num_contrato'])] = str(c['vencimento'])
+                if c.get('num_contrato') and c.get('data_fim'):
+                    map_vencimentos[str(c['num_contrato'])] = str(c['data_fim'])
 
         hoje = datetime.now().date()
         disparos = 0
@@ -170,7 +170,7 @@ def executar_automacao_faturamentos(supabase, config_db):
             inicio_dt = datetime.strptime(inicio_str, "%Y-%m-%d").date()
             data_fatura = calcular_previsao_faturamento(condicao, inicio_dt, dia_fixo, pular_mes)
 
-            # VALIDAÇÃO CRUSADA COM O CONTRATO: Se a fatura ultrapassar o vencimento do contrato, encerra automaticamente
+            # VALIDAÇÃO CRUZADA: Se a fatura ultrapassar a data_fim do contrato, encerra automaticamente
             if num_prop in map_vencimentos:
                 venc_contrato_dt = datetime.strptime(map_vencimentos[num_prop], "%Y-%m-%d").date()
                 if data_fatura > venc_contrato_dt:
@@ -530,76 +530,82 @@ def executar():
                 st.info("Nenhum faturamento ativo no momento.")
             else:
                 try:
-                    res_cont = supabase.table("contratos").select("id, num_contrato, vencimento").execute()
+                    res_cont = supabase.table("contratos").select("id, num_contrato, data_fim").execute()
                     map_contratos = {str(c['id']): str(c['num_contrato']) for c in res_cont.data} if res_cont and res_cont.data else {}
-                    map_vencimentos = {str(c['num_contrato']): str(c['vencimento']) for c in res_cont.data if c.get('num_contrato') and c.get('vencimento')}
+                    map_vencimentos = {str(c['num_contrato']): str(c['data_fim']) for c in res_cont.data if c.get('num_contrato') and c.get('data_fim')}
                 except Exception:
                     map_contratos = {}
                     map_vencimentos = {}
 
                 df['id_contrato_real'] = df['id_contrato'].apply(lambda x: map_contratos.get(str(x), str(x)))
 
-                previsoes = []
+                # VALIDAÇÃO AUTOMÁTICA IMEDIATA AO CARREGAR O PAINEL:
                 for _, row in df.iterrows():
                     d_val = int(row['dia_fixo']) if (row.get('dia_fixo') is not None and pd.notna(row['dia_fixo'])) else 10
                     p_val = bool(row['pular_mes_atual']) if (row.get('pular_mes_atual') is not None and pd.notna(row['pular_mes_atual'])) else False
-                    dt_prev = calcular_previsao_faturamento(
-                        row['condicao'], 
-                        row['inicio_periodo'], 
-                        d_val,
-                        p_val
-                    )
+                    dt_prev = calcular_previsao_faturamento(row['condicao'], row['inicio_periodo'], d_val, p_val)
                     
-                    # Se ultrapassar o vencimento do contrato, mostra como Finalizado visualmente
                     num_p = str(row['id_contrato'])
                     if num_p in map_vencimentos:
                         try:
                             venc_dt = datetime.strptime(map_vencimentos[num_p], "%Y-%m-%d").date()
                             if dt_prev > venc_dt:
-                                # Opcional: atualizar no banco em segundo plano se necessário
-                                pass
+                                supabase.table("faturamentos").update({"status": "Finalizado"}).eq("id", row['id']).execute()
                         except Exception:
                             pass
 
-                    previsoes.append(dt_prev.strftime('%d/%m/%Y'))
-                
-                df['previsao_faturamento'] = previsoes
+                # Recarrega a tabela limpa apenas com os que continuam ativos após a verificação
+                response_ativos = supabase.table("faturamentos").select("*").eq("status", "Ativo").execute()
+                df = pd.DataFrame(response_ativos.data) if response_ativos and response_ativos.data else pd.DataFrame()
 
-                st.subheader("📋 Faturas e Prazos Ativos")
+                if df.empty:
+                    st.info("Nenhum faturamento ativo no momento (todos os vencidos foram finalizados com base na data fim dos contratos).")
+                else:
+                    df['id_contrato_real'] = df['id_contrato'].apply(lambda x: map_contratos.get(str(x), str(x)))
+                    previsoes = []
+                    for _, row in df.iterrows():
+                        d_val = int(row['dia_fixo']) if (row.get('dia_fixo') is not None and pd.notna(row['dia_fixo'])) else 10
+                        p_val = bool(row['pular_mes_atual']) if (row.get('pular_mes_atual') is not None and pd.notna(row['pular_mes_atual'])) else False
+                        dt_prev = calcular_previsao_faturamento(row['condicao'], row['inicio_periodo'], d_val, p_val)
+                        previsoes.append(dt_prev.strftime('%d/%m/%Y'))
+                    
+                    df['previsao_faturamento'] = previsoes
 
-                display_df = df[['id_contrato_real', 'cliente', 'condicao', 'inicio_periodo', 'previsao_faturamento', 'status']].copy()
-                display_df['inicio_periodo'] = pd.to_datetime(display_df['inicio_periodo']).dt.strftime('%d/%m/%Y')
-                
-                display_df.columns = [
-                    'Número da Proposta', 
-                    'Cliente', 
-                    'Condição', 
-                    'Início Período', 
-                    'Previsão de Faturamento', 
-                    'Status'
-                ]
-                
-                st.dataframe(display_df, use_container_width=True, hide_index=True)
+                    st.subheader("📋 Faturas e Prazos Ativos")
 
-                st.divider()
-                st.subheader("🔴 Gestão de Encerramento (Fim de Contrato)")
-                st.markdown("Selecione um cliente abaixo para encerrá-lo. **Atenção:** Uma vez encerrado, o contrato é arquivado permanentemente e não retornará para a seleção de novos faturamentos.")
+                    display_df = df[['id_contrato_real', 'cliente', 'condicao', 'inicio_periodo', 'previsao_faturamento', 'status']].copy()
+                    display_df['inicio_periodo'] = pd.to_datetime(display_df['inicio_periodo']).dt.strftime('%d/%m/%Y')
+                    
+                    display_df.columns = [
+                        'Número da Proposta', 
+                        'Cliente', 
+                        'Condição', 
+                        'Início Período', 
+                        'Previsão de Faturamento', 
+                        'Status'
+                    ]
+                    
+                    st.dataframe(display_df, use_container_width=True, hide_index=True)
 
-                reg_id = st.selectbox(
-                    "Selecionar Registo para Encerrar:",
-                    df['id'].tolist(),
-                    format_func=lambda x: f"Cliente: {df[df['id']==x]['cliente'].values[0]} (Proposta: {df[df['id']==x]['id_contrato_real'].values[0]})"
-                )
+                    st.divider()
+                    st.subheader("🔴 Gestão de Encerramento (Fim de Contrato)")
+                    st.markdown("Selecione um cliente abaixo para encerrá-lo. **Atenção:** Uma vez encerrado, o contrato é arquivado permanentemente e não retornará para a seleção de novos faturamentos.")
 
-                cliente_selecionado = df[df['id'] == reg_id]['cliente'].values[0]
+                    reg_id = st.selectbox(
+                        "Selecionar Registo para Encerrar:",
+                        df['id'].tolist(),
+                        format_func=lambda x: f"Cliente: {df[df['id']==x]['cliente'].values[0]} (Proposta: {df[df['id']==x]['id_contrato_real'].values[0]})"
+                    )
 
-                if st.button(f"🛑 Declarar Fim de Contrato / Encerrar ({cliente_selecionado})"):
-                    try:
-                        supabase.table("faturamentos").update({"status": "Finalizado"}).eq("id", reg_id).execute()
-                        st.success(f"Contrato/Faturamento de '{cliente_selecionado}' encerrado permanentemente com sucesso!")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Erro ao encerrar: {e}")
+                    cliente_selecionado = df[df['id'] == reg_id]['cliente'].values[0]
+
+                    if st.button(f"🛑 Declarar Fim de Contrato / Encerrar ({cliente_selecionado})"):
+                        try:
+                            supabase.table("faturamentos").update({"status": "Finalizado"}).eq("id", reg_id).execute()
+                            st.success(f"Contrato/Faturamento de '{cliente_selecionado}' encerrado permanentemente com sucesso!")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Erro ao encerrar: {e}")
         except Exception as e:
             st.error(f"Erro ao carregar o painel de faturamentos ativos: {e}")
 
