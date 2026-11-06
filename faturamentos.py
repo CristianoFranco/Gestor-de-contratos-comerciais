@@ -322,23 +322,33 @@ def executar():
                 st.info(f"📅 Previsão de Faturamento Calculada: **{data_prevista_preview.strftime('%d/%m/%Y')}**")
 
                 if st.button("💾 Salvar Regra de Faturamento", key="btn_salvar_fat"):
+                    # Validação de duplicidade na base
                     try:
-                        novo_reg = {
-                            "id_contrato": numero_proposta,
-                            "cliente": cliente_nome,
-                            "condicao": condicao,
-                            "dia_fixo": dia_fixo,
-                            "inicio_periodo": str(inicio_periodo),
-                            "email_cliente": email_cobranca,
-                            "status": "Ativo",
-                            "alerta_enviado": 0,
-                            "pular_mes_atual": pular_mes_atual
-                        }
-                        supabase.table("faturamentos").insert(novo_reg).execute()
-                        st.success("Regra de faturamento guardada com sucesso!")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Erro ao salvar no Supabase: {e}")
+                        res_dup = supabase.table("faturamentos").select("id_contrato").eq("id_contrato", numero_proposta).execute()
+                        ja_existe = res_dup.data if res_dup and res_dup.data else []
+                    except Exception:
+                        ja_existe = []
+
+                    if ja_existe:
+                        st.error(f"❌ Erro: Já existe um faturamento registado com o número de proposta '{numero_proposta}'. Proibido duplicar propostas!")
+                    else:
+                        try:
+                            novo_reg = {
+                                "id_contrato": numero_proposta,
+                                "cliente": cliente_nome,
+                                "condicao": condicao,
+                                "dia_fixo": dia_fixo,
+                                "inicio_periodo": str(inicio_periodo),
+                                "email_cliente": email_cobranca,
+                                "status": "Ativo",
+                                "alerta_enviado": 0,
+                                "pular_mes_atual": pular_mes_atual
+                            }
+                            supabase.table("faturamentos").insert(novo_reg).execute()
+                            st.success("Regra de faturamento guardada com sucesso!")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Erro ao salvar no Supabase: {e}")
 
         elif modo == "Cadastro Manual (Avulso)":
             st.markdown("### ✍️ Inserção Manual de Contrato / Proposta")
@@ -383,23 +393,33 @@ def executar():
                 if not numero_proposta or not cliente_nome:
                     st.error("Por favor, preencha todos os campos obrigatórios (*).")
                 else:
+                    # Validação estrita de duplicidade para cadastro manual
                     try:
-                        novo_reg_manual = {
-                            "id_contrato": str(numero_proposta),
-                            "cliente": cliente_nome,
-                            "condicao": condicao_man,
-                            "dia_fixo": dia_fixo_man,
-                            "inicio_periodo": str(inicio_periodo_man),
-                            "email_cliente": "",
-                            "status": "Ativo",
-                            "alerta_enviado": 0,
-                            "pular_mes_atual": pular_mes_man
-                        }
-                        supabase.table("faturamentos").insert(novo_reg_manual).execute()
-                        st.success(f"Regra manual para '{cliente_nome}' guardada com sucesso na Gestão de Faturamentos!")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Erro ao salvar no Supabase: {e}")
+                        res_dup_man = supabase.table("faturamentos").select("id_contrato").eq("id_contrato", str(numero_proposta).strip()).execute()
+                        ja_existe_man = res_dup_man.data if res_dup_man and res_dup_man.data else []
+                    except Exception:
+                        ja_existe_man = []
+
+                    if ja_existe_man:
+                        st.error(f"❌ Erro: Já existe um faturamento registado com o número de proposta '{numero_proposta}'. O sistema não permite números de propostas duplicados!")
+                    else:
+                        try:
+                            novo_reg_manual = {
+                                "id_contrato": str(numero_proposta).strip(),
+                                "cliente": cliente_nome,
+                                "condicao": condicao_man,
+                                "dia_fixo": dia_fixo_man,
+                                "inicio_periodo": str(inicio_periodo_man),
+                                "email_cliente": "",
+                                "status": "Ativo",
+                                "alerta_enviado": 0,
+                                "pular_mes_atual": pular_mes_man
+                            }
+                            supabase.table("faturamentos").insert(novo_reg_manual).execute()
+                            st.success(f"Regra manual para '{cliente_nome}' guardada com sucesso na Gestão de Faturamentos!")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Erro ao salvar no Supabase: {e}")
 
         else:  # Modo Editar Faturamento Existente
             df_ativos = pd.DataFrame()
@@ -594,4 +614,20 @@ def executar():
         st.markdown("<br>", unsafe_allow_html=True)
 
         if st.button("🔄 Atualizar Logs"):
-            st
+            st.rerun()
+
+        df_logs = pd.DataFrame()
+        try:
+            res_logs = supabase.table("logs_faturamento").select("*").order("data_envio", desc=True).execute()
+            if res_logs and res_logs.data:
+                df_logs = pd.DataFrame(res_logs.data)
+        except Exception as e:
+            st.warning(f"Aviso: Não foi possível carregar os logs (verifique se a tabela 'logs_faturamento' foi criada no Supabase). Erro: {e}")
+
+        if df_logs.empty:
+            st.info("Nenhum log de mensagem registado até ao momento.")
+        else:
+            display_logs = df_logs[['data_envio', 'cliente', 'proposta', 'status', 'mensagem']].copy()
+            display_logs.columns = ['Data / Hora do Envio', 'Cliente', 'Proposta Nº', 'Status do Envio', 'Mensagem Enviada']
+            
+            st.dataframe(display_logs, use_container_width=True, hide_index=True)
