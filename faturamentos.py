@@ -531,18 +531,20 @@ def executar():
                     p_val = bool(row['pular_mes_atual']) if (row.get('pular_mes_atual') is not None and pd.notna(row['pular_mes_atual'])) else False
                     dt_prev = calcular_previsao_faturamento(row['condicao'], row['inicio_periodo'], d_val, p_val)
                     
-                    previsoes.append(dt_prev.strftime('%d/%m/%Y'))
-
-                    # VALIDAÇÃO VISUAL (SEM OCULTAR): Verifica se a previsão atingiu ou ultrapassou a data fim do contrato
                     num_p = str(row['id_contrato'])
                     status_str = "Ativo"
+
+                    # LEITURA DA DATA LIMITE DO CONTRATO: Trava a previsão exatamente na data_fim do contrato caso a regra ultrapasse
                     if num_p in map_vencimentos:
                         try:
                             venc_dt = datetime.strptime(map_vencimentos[num_p], "%Y-%m-%d").date()
                             if dt_prev >= venc_dt:
+                                dt_prev = venc_dt
                                 status_str = "⚠️ Último Faturamento (Fim de Contrato Atingido)"
                         except Exception:
                             pass
+
+                    previsoes.append(dt_prev.strftime('%d/%m/%Y'))
                     status_vigencia.append(status_str)
                 
                 df['previsao_faturamento'] = previsoes
