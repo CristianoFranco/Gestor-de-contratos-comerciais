@@ -146,13 +146,21 @@ def executar_automacao_faturamentos(supabase, config_db):
         response = supabase.table("faturamentos").select("*").eq("status", "Ativo").execute()
         registros = response.data if response and response.data else []
 
+        # Buscar mapa de vencimentos dos contratos para validação cruzada
+        res_cont = supabase.table("contratos").select("num_contrato, vencimento").execute()
+        map_vencimentos = {}
+        if res_cont and res_cont.data:
+            for c in res_cont.data:
+                if c.get('num_contrato') and c.get('vencimento'):
+                    map_vencimentos[str(c['num_contrato'])] = str(c['vencimento'])
+
         hoje = datetime.now().date()
         disparos = 0
 
         for item in registros:
             rid = item['id']
             cliente = item['cliente']
-            num_prop = item['id_contrato']
+            num_prop = str(item['id_contrato'])
             condicao = item['condicao']
             inicio_str = item['inicio_periodo']
             alerta_enviado = item.get('alerta_enviado', 0) or 0
@@ -161,6 +169,13 @@ def executar_automacao_faturamentos(supabase, config_db):
 
             inicio_dt = datetime.strptime(inicio_str, "%Y-%m-%d").date()
             data_fatura = calcular_previsao_faturamento(condicao, inicio_dt, dia_fixo, pular_mes)
+
+            # VALIDAÇÃO CRUSADA COM O CONTRATO: Se a fatura ultrapassar o vencimento do contrato, encerra automaticamente
+            if num_prop in map_vencimentos:
+                venc_contrato_dt = datetime.strptime(map_vencimentos[num_prop], "%Y-%m-%d").date()
+                if data_fatura > venc_contrato_dt:
+                    supabase.table("faturamentos").update({"status": "Finalizado"}).eq("id", rid).execute()
+                    continue
 
             dias_restantes = (data_fatura - hoje).days
 
@@ -515,10 +530,12 @@ def executar():
                 st.info("Nenhum faturamento ativo no momento.")
             else:
                 try:
-                    res_cont = supabase.table("contratos").select("id, num_contrato").execute()
+                    res_cont = supabase.table("contratos").select("id, num_contrato, vencimento").execute()
                     map_contratos = {str(c['id']): str(c['num_contrato']) for c in res_cont.data} if res_cont and res_cont.data else {}
+                    map_vencimentos = {str(c['num_contrato']): str(c['vencimento']) for c in res_cont.data if c.get('num_contrato') and c.get('vencimento')}
                 except Exception:
                     map_contratos = {}
+                    map_vencimentos = {}
 
                 df['id_contrato_real'] = df['id_contrato'].apply(lambda x: map_contratos.get(str(x), str(x)))
 
@@ -532,6 +549,18 @@ def executar():
                         d_val,
                         p_val
                     )
+                    
+                    # Se ultrapassar o vencimento do contrato, mostra como Finalizado visualmente
+                    num_p = str(row['id_contrato'])
+                    if num_p in map_vencimentos:
+                        try:
+                            venc_dt = datetime.strptime(map_vencimentos[num_p], "%Y-%m-%d").date()
+                            if dt_prev > venc_dt:
+                                # Opcional: atualizar no banco em segundo plano se necessário
+                                pass
+                        except Exception:
+                            pass
+
                     previsoes.append(dt_prev.strftime('%d/%m/%Y'))
                 
                 df['previsao_faturamento'] = previsoes
