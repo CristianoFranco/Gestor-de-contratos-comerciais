@@ -126,4 +126,15 @@ def executar():
             data_fatura = ajustar_dia_util(data_fatura, "avancar")
         
         elif condicao == "Data Fixa":
-            d_fixo = min(int(dia_fixo), calendar.monthrange(base_
+            d_fixo = min(int(dia_fixo), calendar.monthrange(base_dt.year, base_dt.month)[1])
+            data_fatura = datetime(base_dt.year, base_dt.month, d_fixo).date()
+            if data_fatura < base_dt:
+                mes_prox = base_dt.month % 12 + 1
+                ano_prox = base_dt.year + (1 if base_dt.month == 12 else 0)
+                d_fixo_prox = min(int(dia_fixo), calendar.monthrange(ano_prox, mes_prox)[1])
+                data_fatura = datetime(ano_prox, mes_prox, d_fixo_prox).date()
+            data_fatura = ajustar_dia_util(data_fatura, "retroceder")
+        
+        elif condicao == "1º dia útil do mês":
+            primeiro_dia = datetime(base_dt.year, base_dt.month, 1).date()
+            data_fatura = ajustar
