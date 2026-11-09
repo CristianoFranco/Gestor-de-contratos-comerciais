@@ -181,7 +181,7 @@ def executar():
 
                 total_meses = int(vigencia_meses)
                 
-                # Cálculo de adição de meses por índice absoluto (Robusto para datas retroativas e futuras)
+                # CÁLCULO ROBUSTO POR ÍNDICE ABSOLUTO DE MESES (Corrige datas retroativas e futuras)
                 mes_total_inicial = data_inicio.year * 12 + (data_inicio.month - 1)
                 mes_total_final = mes_total_inicial + total_meses
                 
@@ -196,3 +196,84 @@ def executar():
                 data_fim_calculada = datetime(ano_alvo, mes_alvo, dia_alvo).date()
 
                 st.info(f"📅 Previsão de Término / Renovação: {data_fim_calculada.strftime('%d/%m/%Y')}")
+
+                submitted = st.form_submit_button("💾 Salvar Contrato")
+
+                if submitted:
+                    if not cliente or not num_contrato or not email_cliente:
+                        st.error("Por favor, preencha todos os campos obrigatórios (*).")
+                    else:
+                        try:
+                            novo_registro = {
+                                "cliente": cliente,
+                                "num_contrato": num_contrato,
+                                "data_inicio": str(data_inicio),
+                                "vigencia_meses": vigencia_meses,
+                                "data_fim": str(data_fim_calculada),
+                                "email_cliente": email_cliente,
+                                "telefone_cliente": telefone_cliente,
+                                "status": "Ativo",
+                                "alerta_45_enviado": 0,
+                                "alerta_30_enviado": 0
+                            }
+                            supabase.table("contratos").insert(novo_registro).execute()
+                            st.success("✅ Contrato cadastrado com sucesso! Os campos foram limpos.")
+                            st.toast("Contrato salvo com sucesso!", icon="✅")
+                        except Exception as e:
+                            if "duplicate key" in str(e).lower() or "unique constraint" in str(e).lower():
+                                st.error("Erro: Número de contrato já cadastrado.")
+                            else:
+                                st.error(f"Erro ao salvar: {e}")
+
+        with tab_edit:
+            df_edit = pd.DataFrame()
+            try:
+                response = supabase.table("contratos").select("*").execute()
+                df_edit = pd.DataFrame(response.data)
+            except Exception as e:
+                st.error(f"Erro ao carregar contratos: {e}")
+            
+            if df_edit.empty:
+                st.info("Nenhum contrato cadastrado.")
+            else:
+                lista_ids = df_edit['id'].tolist()
+                if "selected_contract_id" not in st.session_state or st.session_state["selected_contract_id"] not in lista_ids:
+                    st.session_state["selected_contract_id"] = lista_ids[0]
+
+                cid_edit = st.selectbox(
+                    "Selecione o Contrato:",
+                    lista_ids,
+                    index=lista_ids.index(st.session_state["selected_contract_id"]),
+                    key="select_contrato_editar",
+                    format_func=lambda x: f"ID {x} - {df_edit[df_edit['id']==x]['cliente'].values[0]} ({df_edit[df_edit['id']==x]['num_contrato'].values[0]})"
+                )
+                
+                st.session_state["selected_contract_id"] = cid_edit
+                c_data = df_edit[df_edit['id'] == cid_edit].iloc[0]
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    novo_cliente = st.text_input("Nome do Cliente (Fixo)", value=c_data['cliente'], disabled=True, key=f"edit_cliente_{cid_edit}")
+                    novo_num_contrato = st.text_input("Número do Contrato (Fixo)", value=c_data['num_contrato'], disabled=True, key=f"edit_num_{cid_edit}")
+                    data_inicio_edit = st.date_input("Data de Início", value=datetime.strptime(c_data['data_inicio'], "%Y-%m-%d").date(), key=f"edit_data_{cid_edit}")
+                with col2:
+                    novo_email = st.text_input("E-mail do Cliente *", value=c_data['email_cliente'], key=f"edit_email_{cid_edit}")
+                    novo_tel = st.text_input("Telefone do Cliente *", value=c_data['telefone_cliente'], key=f"edit_tel_{cid_edit}")
+                    nova_vigencia = st.number_input("Vigência (Meses) *", min_value=1, value=int(c_data['vigencia_meses']), step=1, key=f"edit_vig_{cid_edit}")
+                
+                t_meses = int(nova_vigencia)
+                
+                # Recálculo robusto na edição
+                mes_total_ini_ed = data_inicio_edit.year * 12 + (data_inicio_edit.month - 1)
+                mes_total_fim_ed = mes_total_ini_ed + t_meses
+                
+                a_alvo = mes_total_fim_ed // 12
+                m_alvo = (mes_total_fim_ed % 12) + 1
+                d_alvo = data_inicio_edit.day
+                
+                ultimo_d = calendar.monthrange(a_alvo, m_alvo)[1]
+                if d_alvo > ultimo_d:
+                    d_alvo = ultimo_d
+                nova_data_fim = datetime(a_alvo, m_alvo, d_alvo).date()
+
+                st.info(f"📅 Nova Data Fim Recalculada pela Vigência: {nova_data_fim.strftime('%d/%m/%Y')}")
