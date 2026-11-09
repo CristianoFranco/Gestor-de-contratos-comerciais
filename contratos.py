@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
+from dateutil.relativedelta import relativedelta
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -116,7 +117,6 @@ def executar():
                 data_fim_br = data_fim.strftime("%d/%m/%Y")
                 dias_restantes = (data_fim - hoje).days
 
-                # 45 dias -> Comercial Globex
                 if dias_restantes <= 45 and dias_restantes > 30 and a45 == 0:
                     assunto = f"[ALERTA RENOVAÇÃO] Contrato próximo de vencer - {cliente}"
                     corpo = f"Atenção Comercial Globex,\n\nExiste um contrato próximo ao período de renovação.\n\nCliente: {cliente}\nNº Contrato: {num_contrato}\nData de Vencimento: {data_fim_br}\nDias restantes: {dias_restantes}"
@@ -126,7 +126,6 @@ def executar():
                         supabase.table("contratos").update({"alerta_45_enviado": 1, "status": "Informado ao comercial por email"}).eq("id", cid).execute()
                         disparos_45 += 1
 
-                # 30 dias -> Cliente
                 elif dias_restantes <= 30 and a30 == 0:
                     assunto = f"Globex Multimodal - Renovação de Contrato Nº {num_contrato}"
                     corpo = f"Prezado(a) cliente {cliente},\n\nSeu contrato está chegando próximo à renovação. Aguarde contato da Globex.\n\nAtenciosamente,\nGlobex Multimodal"
@@ -173,6 +172,7 @@ def executar():
                     cliente = st.text_input("Nome do Cliente *")
                     num_contrato = st.text_input("Número do Contrato *")
                     data_inicio = st.date_input("Data de Início do Contrato", datetime.now())
+                    st.caption(f"📅 Data selecionada (Formato Brasileiro): **{data_inicio.strftime('%d/%m/%Y')}**")
                 
                 with col2:
                     email_cliente = st.text_input("E-mail do Cliente *")
@@ -181,21 +181,10 @@ def executar():
 
                 total_meses = int(vigencia_meses)
                 
-                # CÁLCULO ROBUSTO POR ÍNDICE ABSOLUTO DE MESES (Corrige datas retroativas e futuras)
-                mes_total_inicial = data_inicio.year * 12 + (data_inicio.month - 1)
-                mes_total_final = mes_total_inicial + total_meses
-                
-                ano_alvo = mes_total_final // 12
-                mes_alvo = (mes_total_final % 12) + 1
-                dia_alvo = data_inicio.day
-                
-                ultimo_dia_mes_alvo = calendar.monthrange(ano_alvo, mes_alvo)[1]
-                if dia_alvo > ultimo_dia_mes_alvo:
-                    dia_alvo = ultimo_dia_mes_alvo
-                    
-                data_fim_calculada = datetime(ano_alvo, mes_alvo, dia_alvo).date()
+                # CÁLCULO PRECISO UTILIZANDO RELATIVEDELTA (Adiciona meses exatos no calendário civil)
+                data_fim_calculada = data_inicio + relativedelta(months=total_meses)
 
-                st.info(f"📅 Previsão de Término / Renovação: {data_fim_calculada.strftime('%d/%m/%Y')}")
+                st.info(f"📅 Previsão de Término / Renovação: **{data_fim_calculada.strftime('%d/%m/%Y')}**")
 
                 submitted = st.form_submit_button("💾 Salvar Contrato")
 
@@ -256,24 +245,121 @@ def executar():
                     novo_cliente = st.text_input("Nome do Cliente (Fixo)", value=c_data['cliente'], disabled=True, key=f"edit_cliente_{cid_edit}")
                     novo_num_contrato = st.text_input("Número do Contrato (Fixo)", value=c_data['num_contrato'], disabled=True, key=f"edit_num_{cid_edit}")
                     data_inicio_edit = st.date_input("Data de Início", value=datetime.strptime(c_data['data_inicio'], "%Y-%m-%d").date(), key=f"edit_data_{cid_edit}")
+                    st.caption(f"📅 Data Início (Padrão BR): **{data_inicio_edit.strftime('%d/%m/%Y')}**")
                 with col2:
                     novo_email = st.text_input("E-mail do Cliente *", value=c_data['email_cliente'], key=f"edit_email_{cid_edit}")
                     novo_tel = st.text_input("Telefone do Cliente *", value=c_data['telefone_cliente'], key=f"edit_tel_{cid_edit}")
                     nova_vigencia = st.number_input("Vigência (Meses) *", min_value=1, value=int(c_data['vigencia_meses']), step=1, key=f"edit_vig_{cid_edit}")
                 
                 t_meses = int(nova_vigencia)
-                
-                # Recálculo robusto na edição
-                mes_total_ini_ed = data_inicio_edit.year * 12 + (data_inicio_edit.month - 1)
-                mes_total_fim_ed = mes_total_ini_ed + t_meses
-                
-                a_alvo = mes_total_fim_ed // 12
-                m_alvo = (mes_total_fim_ed % 12) + 1
-                d_alvo = data_inicio_edit.day
-                
-                ultimo_d = calendar.monthrange(a_alvo, m_alvo)[1]
-                if d_alvo > ultimo_d:
-                    d_alvo = ultimo_d
-                nova_data_fim = datetime(a_alvo, m_alvo, d_alvo).date()
+                nova_data_fim = data_inicio_edit + relativedelta(months=t_meses)
 
-                st.info(f"📅 Nova Data Fim Recalculada pela Vigência: {nova_data_fim.strftime('%d/%m/%Y')}")
+                st.info(f"📅 Nova Data Fim Recalculada pela Vigência: **{nova_data_fim.strftime('%d/%m/%Y')}**")
+                
+                forcar_data_fim = st.checkbox("Definir Data Limite de Vigência Manualmente (Término Antecipado / Rescisão)", key=f"chk_forcar_{cid_edit}")
+                if forcar_data_fim:
+                    dt_atual_fim = datetime.strptime(c_data['data_fim'], "%Y-%m-%d").date() if c_data.get('data_fim') else nova_data_fim
+                    nova_data_fim = st.date_input("Nova Data Final de Vigência *", value=dt_atual_fim, key=f"input_nova_fim_{cid_edit}")
+                    st.warning(f"⚠️ A data limite do contrato foi fixada manualmente em: **{nova_data_fim.strftime('%d/%m/%Y')}**. O faturamento respeitará este limite.")
+
+                if st.button("💾 Salvar Alterações", key=f"btn_salvar_edit_{cid_edit}"):
+                    if not novo_email:
+                        st.error("Preencha o e-mail do cliente obrigatório (*).")
+                    else:
+                        try:
+                            dados_atualizados = {
+                                "cliente": c_data['cliente'],
+                                "num_contrato": c_data['num_contrato'],
+                                "data_inicio": str(data_inicio_edit),
+                                "vigencia_meses": nova_vigencia,
+                                "data_fim": str(nova_data_fim),
+                                "email_cliente": novo_email,
+                                "telefone_cliente": novo_tel
+                            }
+                            supabase.table("contratos").update(dados_atualizados).eq("id", cid_edit).execute()
+                            
+                            if "selected_contract_id" in st.session_state:
+                                del st.session_state["selected_contract_id"]
+                                
+                            st.success("✅ Contrato atualizado com sucesso!")
+                            st.toast("Alterações salvas com sucesso!", icon="✅")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Erro ao atualizar: {e}")
+
+                st.markdown("<br>", unsafe_allow_html=True)
+                st.markdown("---")
+                st.subheader("⚠️ Zona de Exclusão")
+                
+                if st.button("🗑️ Excluir Contrato Permanentemente", key=f"btn_excluir_{cid_edit}"):
+                    try:
+                        supabase.table("contratos").delete().eq("id", cid_edit).execute()
+                        if "selected_contract_id" in st.session_state:
+                            del st.session_state["selected_contract_id"]
+                        
+                        st.success("✅ Contrato excluído permanentemente!")
+                        st.toast("Contrato excluído!", icon="🗑️")
+                        st.rerun()
+                    except Exception as e:
+                        st.error("🚫 **Operação Bloqueada:** Não foi possível excluir o contrato devido a haver faturamentos programados na base de dados.")
+
+    # Tela 02: Painel de Gestão
+    elif opcao == "Gestão de Contratos":
+        st.markdown("<h1 style='text-align: center; color: #0c3547;'>📊 Painel de Gestão de Contratos</h1>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align: center; color: #666;'>Acompanhe os contratos ordenados por urgência.</p>", unsafe_allow_html=True)
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        if "automacao_executada" not in st.session_state:
+            msg_auto = executar_automacao_alertas()
+            st.session_state["automacao_executada"] = True
+            if "com sucesso" in msg_auto:
+                st.toast(msg_auto)
+
+        col_btn1, col_btn2 = st.columns([1, 3])
+        with col_btn1:
+            if st.button("🔄 Executar Alertas Manualmente"):
+                msg_res = executar_automacao_alertas()
+                st.toast(msg_res)
+                st.rerun()
+
+        df = pd.DataFrame()
+        try:
+            response = supabase.table("contratos").select("*").execute()
+            df = pd.DataFrame(response.data)
+        except Exception as e:
+            st.error(f"Erro ao carregar dados do Supabase: {e}")
+
+        if df.empty:
+            st.warning("Nenhum contrato cadastrado.")
+        else:
+            hoje = datetime.now().date()
+            df['data_fim_dt'] = pd.to_datetime(df['data_fim']).dt.date
+            df['dias_restantes'] = df['data_fim_dt'].apply(lambda x: (x - hoje).days)
+            
+            df = df.sort_values(by='dias_restantes', ascending=True)
+
+            total_contratos = len(df)
+            vencendo_breve = len(df[df['dias_restantes'] <= 45])
+            vencidos_total = len(df[df['dias_restantes'] < 0])
+            
+            mcol1, mcol2 = st.columns(2)
+            with mcol1:
+                st.markdown(f"""
+                    <div class="metric-card">
+                        <h3 style="margin:0; color:#0c3547;">{total_contratos}</h3>
+                        <p style="margin:0; color:#666;">Total de Contratos</p>
+                    </div>
+                """, unsafe_allow_html=True)
+            with mcol2:
+                st.markdown(f"""
+                    <div class="metric-card metric-card-alert">
+                        <h3 style="margin:0; color:#d90429;">{vencendo_breve}</h3>
+                        <p style="margin:0; color:#666;">Vencendo em breve / Vencidos (≤ 45 dias)</p>
+                    </div>
+                """, unsafe_allow_html=True)
+
+            st.markdown("<br>", unsafe_allow_html=True)
+            st.subheader("📋 Lista Geral de Contratos")
+            
+            if vencidos_total > 0:
+                st
