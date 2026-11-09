@@ -167,7 +167,6 @@ def executar():
         with tab_cad:
             st.subheader("Novo Contrato")
             
-            # Formulário estruturado preservando rigorosamente os nomes e títulos originais
             col1, col2 = st.columns(2)
             with col1:
                 cliente = st.text_input("Nome do Cliente *", key="nc_cliente")
@@ -196,7 +195,6 @@ def executar():
             data_fim_calculada = datetime(ano_alvo, mes_alvo, dia_alvo).date()
             data_fim_br = data_fim_calculada.strftime('%d/%m/%Y')
 
-            # Previsão alterando-se dinamicamente ao mexer nos meses ou na data
             st.info(f"📅 Previsão de Término / Renovação: {data_fim_br}")
 
             if st.button("💾 Salvar Contrato", key="btn_salvar_novo_contrato"):
@@ -259,4 +257,98 @@ def executar():
                 with col2:
                     novo_email = st.text_input("E-mail do Cliente *", value=c_data['email_cliente'], key=f"edit_email_{cid_edit}")
                     novo_tel = st.text_input("Telefone do Cliente *", value=c_data['telefone_cliente'], key=f"edit_tel_{cid_edit}")
-                    nova_vigencia = st.number_input
+                    nova_vigencia = st.number_input("Vigência (Meses) *", min_value=1, value=int(c_data['vigencia_meses']), step=1, key=f"edit_vig_{cid_edit}")
+                
+                t_meses = int(nova_vigencia)
+                
+                mes_total_ini_ed = data_inicio_edit.year * 12 + (data_inicio_edit.month - 1)
+                mes_total_fim_ed = mes_total_ini_ed + t_meses
+                
+                a_alvo = mes_total_fim_ed // 12
+                m_alvo = (mes_total_fim_ed % 12) + 1
+                d_alvo = data_inicio_edit.day
+                
+                ultimo_d = calendar.monthrange(a_alvo, m_alvo)[1]
+                if d_alvo > ultimo_d:
+                    d_alvo = ultimo_d
+                nova_data_fim = datetime(a_alvo, m_alvo, d_alvo).date()
+
+                st.info(f"📅 Nova Data Fim Recalculada pela Vigência: {nova_data_fim.strftime('%d/%m/%Y')}")
+                
+                forcar_data_fim = st.checkbox("Definir Data Limite de Vigência Manualmente (Término Antecipado / Rescisão)", key=f"chk_forcar_{cid_edit}")
+                if forcar_data_fim:
+                    dt_atual_fim = datetime.strptime(c_data['data_fim'], "%Y-%m-%d").date() if c_data.get('data_fim') else nova_data_fim
+                    nova_data_fim = st.date_input("Nova Data Final de Vigência *", value=dt_atual_fim, key=f"input_nova_fim_{cid_edit}")
+                    st.warning(f"⚠️ A data limite do contrato foi fixada manualmente em: **{nova_data_fim.strftime('%d/%m/%Y')}**. O faturamento respeitará este limite.")
+
+                if st.button("💾 Salvar Alterações", key=f"btn_salvar_edit_{cid_edit}"):
+                    if not novo_email:
+                        st.error("Preencha o e-mail do cliente obrigatório (*).")
+                    else:
+                        try:
+                            dados_atualizados = {
+                                "cliente": c_data['cliente'],
+                                "num_contrato": c_data['num_contrato'],
+                                "data_inicio": str(data_inicio_edit),
+                                "vigencia_meses": nova_vigencia,
+                                "data_fim": str(nova_data_fim),
+                                "email_cliente": novo_email,
+                                "telefone_cliente": novo_tel
+                            }
+                            supabase.table("contratos").update(dados_atualizados).eq("id", cid_edit).execute()
+                            
+                            if "selected_contract_id" in st.session_state:
+                                del st.session_state["selected_contract_id"]
+                                
+                            st.success("✅ Contrato atualizado com sucesso!")
+                            st.toast("Alterações salvas com sucesso!", icon="✅")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Erro ao atualizar: {e}")
+
+                st.markdown("<br>", unsafe_allow_html=True)
+                st.markdown("---")
+                st.subheader("⚠️ Zona de Exclusão")
+                
+                if st.button("🗑️ Excluir Contrato Permanentemente", key=f"btn_excluir_{cid_edit}"):
+                    try:
+                        supabase.table("contratos").delete().eq("id", cid_edit).execute()
+                        if "selected_contract_id" in st.session_state:
+                            del st.session_state["selected_contract_id"]
+                        
+                        st.success("✅ Contrato excluído permanentemente!")
+                        st.toast("Contrato excluído!", icon="🗑️")
+                        st.rerun()
+                    except Exception as e:
+                        st.error("🚫 **Operação Bloqueada:** Não foi possível excluir o contrato devido a haver faturamentos programados na base de dados.")
+
+    # Tela 02: Painel de Gestão
+    elif opcao == "Gestão de Contratos":
+        st.markdown("<h1 style='text-align: center; color: #0c3547;'>📊 Painel de Gestão de Contratos</h1>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align: center; color: #666;'>Acompanhe os contratos ordenados por urgência.</p>", unsafe_allow_html=True)
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        if "automacao_executada" not in st.session_state:
+            msg_auto = executar_automacao_alertas()
+            st.session_state["automacao_executada"] = True
+            if "com sucesso" in msg_auto:
+                st.toast(msg_auto)
+
+        col_btn1, col_btn2 = st.columns([1, 3])
+        with col_btn1:
+            if st.button("🔄 Executar Alertas Manualmente"):
+                msg_res = executar_automacao_alertas()
+                st.toast(msg_res)
+                st.rerun()
+
+        df = pd.DataFrame()
+        try:
+            response = supabase.table("contratos").select("*").execute()
+            df = pd.DataFrame(response.data)
+        except Exception as e:
+            st.error(f"Erro ao carregar dados do Supabase: {e}")
+
+        if df.empty:
+            st.warning("Nenhum contrato cadastrado.")
+        else:
+            hoje = datetime.now().date()
