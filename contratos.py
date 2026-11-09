@@ -116,6 +116,7 @@ def executar():
                 data_fim_br = data_fim.strftime("%d/%m/%Y")
                 dias_restantes = (data_fim - hoje).days
 
+                # 45 dias -> Comercial Globex
                 if dias_restantes <= 45 and dias_restantes > 30 and a45 == 0:
                     assunto = f"[ALERTA RENOVAÇÃO] Contrato próximo de vencer - {cliente}"
                     corpo = f"Atenção Comercial Globex,\n\nExiste um contrato próximo ao período de renovação.\n\nCliente: {cliente}\nNº Contrato: {num_contrato}\nData de Vencimento: {data_fim_br}\nDias restantes: {dias_restantes}"
@@ -125,6 +126,7 @@ def executar():
                         supabase.table("contratos").update({"alerta_45_enviado": 1, "status": "Informado ao comercial por email"}).eq("id", cid).execute()
                         disparos_45 += 1
 
+                # 30 dias -> Cliente
                 elif dias_restantes <= 30 and a30 == 0:
                     assunto = f"Globex Multimodal - Renovação de Contrato Nº {num_contrato}"
                     corpo = f"Prezado(a) cliente {cliente},\n\nSeu contrato está chegando próximo à renovação. Aguarde contato da Globex.\n\nAtenciosamente,\nGlobex Multimodal"
@@ -170,9 +172,7 @@ def executar():
                 with col1:
                     cliente = st.text_input("Nome do Cliente *")
                     num_contrato = st.text_input("Número do Contrato *")
-                    data_inicio_input = st.date_input("Data de Início do Contrato", datetime.now())
-                    # Exibe a data selecionada claramente no formato brasileiro
-                    st.markdown(f"<span style='color: #0c3547; font-size: 13px; font-weight: bold;'>📅 Início (Formato BR): {data_inicio_input.strftime('%d/%m/%Y')}</span>", unsafe_allow_html=True)
+                    data_inicio = st.date_input("Data de Início do Contrato", datetime.now())
                 
                 with col2:
                     email_cliente = st.text_input("E-mail do Cliente *")
@@ -181,20 +181,21 @@ def executar():
 
                 total_meses = int(vigencia_meses)
                 
-                # CÁLCULO EXATO COM BASE NOS MESES DE CONTRATO (Respeita anos bissextos e fins de mês)
-                ano_alvo = data_inicio_input.year + (data_inicio_input.month - 1 + total_meses) // 12
-                mes_alvo = (data_inicio_input.month - 1 + total_meses) % 12 + 1
-                dia_alvo = data_inicio_input.day
+                # CÁLCULO ROBUSTO POR ÍNDICE ABSOLUTO DE MESES (Corrige datas retroativas e futuras)
+                mes_total_inicial = data_inicio.year * 12 + (data_inicio.month - 1)
+                mes_total_final = mes_total_inicial + total_meses
+                
+                ano_alvo = mes_total_final // 12
+                mes_alvo = (mes_total_final % 12) + 1
+                dia_alvo = data_inicio.day
                 
                 ultimo_dia_mes_alvo = calendar.monthrange(ano_alvo, mes_alvo)[1]
                 if dia_alvo > ultimo_dia_mes_alvo:
                     dia_alvo = ultimo_dia_mes_alvo
                     
                 data_fim_calculada = datetime(ano_alvo, mes_alvo, dia_alvo).date()
-                data_fim_br = data_fim_calculada.strftime('%d/%m/%Y')
 
-                # Nome original "Previsão" restabelecido
-                st.info(f"📅 Previsão: **{data_fim_br}**")
+                st.info(f"📅 Previsão de Término / Renovação: {data_fim_calculada.strftime('%d/%m/%Y')}")
 
                 submitted = st.form_submit_button("💾 Salvar Contrato")
 
@@ -206,7 +207,7 @@ def executar():
                             novo_registro = {
                                 "cliente": cliente,
                                 "num_contrato": num_contrato,
-                                "data_inicio": str(data_inicio_input),
+                                "data_inicio": str(data_inicio),
                                 "vigencia_meses": vigencia_meses,
                                 "data_fim": str(data_fim_calculada),
                                 "email_cliente": email_cliente,
@@ -255,7 +256,6 @@ def executar():
                     novo_cliente = st.text_input("Nome do Cliente (Fixo)", value=c_data['cliente'], disabled=True, key=f"edit_cliente_{cid_edit}")
                     novo_num_contrato = st.text_input("Número do Contrato (Fixo)", value=c_data['num_contrato'], disabled=True, key=f"edit_num_{cid_edit}")
                     data_inicio_edit = st.date_input("Data de Início", value=datetime.strptime(c_data['data_inicio'], "%Y-%m-%d").date(), key=f"edit_data_{cid_edit}")
-                    st.markdown(f"<span style='color: #0c3547; font-size: 13px; font-weight: bold;'>📅 Início (Formato BR): {data_inicio_edit.strftime('%d/%m/%Y')}</span>", unsafe_allow_html=True)
                 with col2:
                     novo_email = st.text_input("E-mail do Cliente *", value=c_data['email_cliente'], key=f"edit_email_{cid_edit}")
                     novo_tel = st.text_input("Telefone do Cliente *", value=c_data['telefone_cliente'], key=f"edit_tel_{cid_edit}")
@@ -263,17 +263,20 @@ def executar():
                 
                 t_meses = int(nova_vigencia)
                 
-                # Recálculo exato com base nos meses na edição
-                a_alvo_ed = data_inicio_edit.year + (data_inicio_edit.month - 1 + t_meses) // 12
-                m_alvo_ed = (data_inicio_edit.month - 1 + t_meses) % 12 + 1
-                d_alvo_ed = data_inicio_edit.day
+                # Recálculo robusto na edição
+                mes_total_ini_ed = data_inicio_edit.year * 12 + (data_inicio_edit.month - 1)
+                mes_total_fim_ed = mes_total_ini_ed + t_meses
                 
-                ultimo_d_ed = calendar.monthrange(a_alvo_ed, m_alvo_ed)[1]
-                if d_alvo_ed > ultimo_d_ed:
-                    d_alvo_ed = ultimo_d_ed
-                nova_data_fim = datetime(a_alvo_ed, m_alvo_ed, d_alvo_ed).date()
+                a_alvo = mes_total_fim_ed // 12
+                m_alvo = (mes_total_fim_ed % 12) + 1
+                d_alvo = data_inicio_edit.day
+                
+                ultimo_d = calendar.monthrange(a_alvo, m_alvo)[1]
+                if d_alvo > ultimo_d:
+                    d_alvo = ultimo_d
+                nova_data_fim = datetime(a_alvo, m_alvo, d_alvo).date()
 
-                st.info(f"📅 Previsão: **{nova_data_fim.strftime('%d/%m/%Y')}**")
+                st.info(f"📅 Nova Data Fim Recalculada pela Vigência: {nova_data_fim.strftime('%d/%m/%Y')}")
                 
                 forcar_data_fim = st.checkbox("Definir Data Limite de Vigência Manualmente (Término Antecipado / Rescisão)", key=f"chk_forcar_{cid_edit}")
                 if forcar_data_fim:
@@ -422,15 +425,16 @@ def executar():
                 nova_data_inicio = datetime.now().date()
                 if tipo_reajuste == "Manter Vigência em Meses":
                     novos_meses = st.number_input("Nova Vigência (meses)", min_value=1, value=int(contrato_atual['vigencia_meses']))
-                    t_m = int(novos_meses)
                     
-                    a_r = nova_data_inicio.year + (nova_data_inicio.month - 1 + t_m) // 12
-                    m_r = (nova_data_inicio.month - 1 + t_m) % 12 + 1
-                    d_r = nova_data_inicio.day
-                    ultimo_d_r = calendar.monthrange(a_r, m_r)[1]
-                    if d_r > ultimo_d_r:
-                        d_r = ultimo_d_r
-                    nova_data_fim = datetime(a_r, m_r, d_r).date()
+                    t_m = int(novos_meses)
+                    mes_tot_ren = nova_data_inicio.year * 12 + (nova_data_inicio.month - 1) + t_m
+                    a_a = mes_tot_ren // 12
+                    m_a = (mes_tot_ren % 12) + 1
+                    d_a = nova_data_inicio.day
+                    ultimo_d_a = calendar.monthrange(a_a, m_a)[1]
+                    if d_a > ultimo_d_a:
+                        d_a = ultimo_d_a
+                    nova_data_fim = datetime(a_a, m_a, d_a).date()
                 else:
                     novos_meses = contrato_atual['vigencia_meses']
                     nova_data_fim = st.date_input("Nova Data Fim", nova_data_inicio + timedelta(days=365))
