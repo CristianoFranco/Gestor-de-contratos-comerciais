@@ -171,7 +171,8 @@ def executar():
                     cliente = st.text_input("Nome do Cliente *")
                     num_contrato = st.text_input("Número do Contrato *")
                     data_inicio_input = st.date_input("Data de Início do Contrato", datetime.now())
-                    st.markdown(f"<span style='color: #0c3547; font-size: 13px; font-weight: bold;'>📅 Data selecionada (Formato BR): {data_inicio_input.strftime('%d/%m/%Y')}</span>", unsafe_allow_html=True)
+                    # Exibe a data selecionada claramente no formato brasileiro
+                    st.markdown(f"<span style='color: #0c3547; font-size: 13px; font-weight: bold;'>📅 Início (Formato BR): {data_inicio_input.strftime('%d/%m/%Y')}</span>", unsafe_allow_html=True)
                 
                 with col2:
                     email_cliente = st.text_input("E-mail do Cliente *")
@@ -180,4 +181,67 @@ def executar():
 
                 total_meses = int(vigencia_meses)
                 
-                # CÁLCULO EXATO POR MESES CIVIS (Respeita anos bissextos e
+                # CÁLCULO EXATO COM BASE NOS MESES DE CONTRATO (Respeita anos bissextos e fins de mês)
+                ano_alvo = data_inicio_input.year + (data_inicio_input.month - 1 + total_meses) // 12
+                mes_alvo = (data_inicio_input.month - 1 + total_meses) % 12 + 1
+                dia_alvo = data_inicio_input.day
+                
+                ultimo_dia_mes_alvo = calendar.monthrange(ano_alvo, mes_alvo)[1]
+                if dia_alvo > ultimo_dia_mes_alvo:
+                    dia_alvo = ultimo_dia_mes_alvo
+                    
+                data_fim_calculada = datetime(ano_alvo, mes_alvo, dia_alvo).date()
+                data_fim_br = data_fim_calculada.strftime('%d/%m/%Y')
+
+                # Nome original "Previsão" restabelecido
+                st.info(f"📅 Previsão: **{data_fim_br}**")
+
+                submitted = st.form_submit_button("💾 Salvar Contrato")
+
+                if submitted:
+                    if not cliente or not num_contrato or not email_cliente:
+                        st.error("Por favor, preencha todos os campos obrigatórios (*).")
+                    else:
+                        try:
+                            novo_registro = {
+                                "cliente": cliente,
+                                "num_contrato": num_contrato,
+                                "data_inicio": str(data_inicio_input),
+                                "vigencia_meses": vigencia_meses,
+                                "data_fim": str(data_fim_calculada),
+                                "email_cliente": email_cliente,
+                                "telefone_cliente": telefone_cliente,
+                                "status": "Ativo",
+                                "alerta_45_enviado": 0,
+                                "alerta_30_enviado": 0
+                            }
+                            supabase.table("contratos").insert(novo_registro).execute()
+                            st.success("✅ Contrato cadastrado com sucesso! Os campos foram limpos.")
+                            st.toast("Contrato salvo com sucesso!", icon="✅")
+                        except Exception as e:
+                            if "duplicate key" in str(e).lower() or "unique constraint" in str(e).lower():
+                                st.error("Erro: Número de contrato já cadastrado.")
+                            else:
+                                st.error(f"Erro ao salvar: {e}")
+
+        with tab_edit:
+            df_edit = pd.DataFrame()
+            try:
+                response = supabase.table("contratos").select("*").execute()
+                df_edit = pd.DataFrame(response.data)
+            except Exception as e:
+                st.error(f"Erro ao carregar contratos: {e}")
+            
+            if df_edit.empty:
+                st.info("Nenhum contrato cadastrado.")
+            else:
+                lista_ids = df_edit['id'].tolist()
+                if "selected_contract_id" not in st.session_state or st.session_state["selected_contract_id"] not in lista_ids:
+                    st.session_state["selected_contract_id"] = lista_ids[0]
+
+                cid_edit = st.selectbox(
+                    "Selecione o Contrato:",
+                    lista_ids,
+                    index=lista_ids.index(st.session_state["selected_contract_id"]),
+                    key="select_contrato_editar",
+                    format_func=lambda x: f"ID {x} - {df_
