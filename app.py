@@ -3,7 +3,7 @@ import os
 import pandas as pd
 from supabase import create_client
 
-# Configuração da página (Deve ser sempre a primeira instrução Streamlit)
+# Configuração da página
 st.set_page_config(
     page_title="Globex Multimodal - Gestão de Contratos & Faturamentos",
     page_icon="📦",
@@ -75,7 +75,15 @@ def voltar_ao_inicio():
 # TELA INICIAL / PORTAL CORPORATIVO
 # -------------------------------------------------------------------------
 if st.session_state["modulo_ativo"] == "home":
-    st.markdown("<br><br>", unsafe_allow_html=True)
+    st.markdown("<br>", unsafe_allow_html=True)
+    
+    # Exibe o logótipo centralizado se existir (procura por Logo.png ou logo.png)
+    caminho_logo = "Logo.png" if os.path.exists("Logo.png") else ("logo.png" if os.path.exists("logo.png") else None)
+    if caminho_logo:
+        col_l1, col_l2, col_l3 = st.columns([1, 1, 1])
+        with col_l2:
+            st.image(caminho_logo, use_container_width=True)
+    
     st.markdown("<h1 style='text-align: center; color: #0c3547;'>Portal Corporativo - Globex Multimodal</h1>", unsafe_allow_html=True)
     st.markdown("<p style='text-align: center; color: #666; font-size: 16px;'>Selecione abaixo o sistema que deseja aceder:</p>", unsafe_allow_html=True)
     st.markdown("<br>", unsafe_allow_html=True)
