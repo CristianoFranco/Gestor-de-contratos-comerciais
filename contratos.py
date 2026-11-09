@@ -90,7 +90,7 @@ def executar():
         comercial = st.session_state.get("email_comercial_globex") or config_db.get("email_comercial_globex")
 
         if not remetente or not senha:
-            return "Configure as credenciais de e-mail na aba Configurações de E-mail."
+            return "Configure as credenciais de e-mail na aba Configuração de E-mail."
 
         if not supabase:
             return "Erro de conexão com o Supabase."
@@ -433,39 +433,4 @@ def executar():
                         d_a = ultimo_d_a
                     nova_data_fim = datetime(a_a, m_a, d_a).date()
                 else:
-                    novos_meses = contrato_atual['vigencia_meses']
-                    nova_data_fim = st.date_input("Nova Data Fim", nova_data_inicio + timedelta(days=365))
-
-                if st.button("✅ Confirmar Renegociação / Renovação"):
-                    try:
-                        dados_renovacao = {
-                            "status": "Ativo",
-                            "data_inicio": str(nova_data_inicio),
-                            "vigencia_meses": novos_meses,
-                            "data_fim": str(nova_data_fim),
-                            "alerta_45_enviado": 0,
-                            "alerta_30_enviado": 0
-                        }
-                        supabase.table("contratos").update(dados_renovacao).eq("id", contrato_id).execute()
-                        st.success("✅ Contrato renegociado e renovado com sucesso!")
-                        st.toast("Contrato renegociado com sucesso!", icon="🔄")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Erro ao renegociar: {e}")
-
-            else:
-                col_acao1, col_acao2 = st.columns(2)
-                with col_acao1:
-                    if st.button("💾 Salvar Status"):
-                        try:
-                            supabase.table("contratos").update({"status": novo_status}).eq("id", contrato_id).execute()
-                            st.success("✅ Status atualizado com sucesso!")
-                            st.toast("Status atualizado!", icon="💾")
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"Erro ao atualizar status: {e}")
-                
-                with col_acao2:
-                    if st.button("🔒 Encerrar Contrato (Remover do Painel)"):
-                        id_contrato_alvo = str(contrato_id).strip()
-                        num_
+                    novos_meses = contrato_atual['vigencia_mes
