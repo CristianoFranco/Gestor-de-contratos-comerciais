@@ -2,8 +2,8 @@ name: Automação Diária Geral (Contratos e Faturamentos)
 
 on:
   schedule:
-    - cron: '0 8 * * *' # Executa todos os dias às 08:00 UTC
-  workflow_dispatch: # Permite disparar manualmente a qualquer momento pela aba Actions do GitHub
+    - cron: '0 11 * * *' # Executa todos os dias às 08:00 da manhã (Horário de Brasília)
+  workflow_dispatch: # Permite disparar manualmente a qualquer momento
 
 jobs:
   run-background-tasks:
