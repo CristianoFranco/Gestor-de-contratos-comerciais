@@ -100,9 +100,4 @@ def executar():
             col1, col2 = st.columns(2)
             with col1:
                 nome_cliente = st.text_input("Nome do Cliente *", key="input_novo_cliente")
-                num_contrato = st.text_input("Número do Contrato *", key="input_novo_num")
-                data_inicio = st.date_input("Data de Início do Contrato", datetime.now(), key="input_novo_inicio")
-            with col2:
-                email_cliente = st.text_input("E-mail do Cliente *", key="input_novo_email")
-                telefone_cliente = st.text_input("Telefone do Cliente *", key="input_novo_tel")
-                vigencia_meses = st.number_input("Vigência / Período do Reajuste (em Meses) *", min_value=1, value=
+                num
