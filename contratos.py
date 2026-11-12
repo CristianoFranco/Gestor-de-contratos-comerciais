@@ -105,8 +105,4 @@ def executar():
             with col2:
                 email_cliente = st.text_input("E-mail do Cliente *", key="input_novo_email")
                 telefone_cliente = st.text_input("Telefone do Cliente *", key="input_novo_tel")
-                vigencia_meses = st.number_input("Vigência / Período do Reajuste (em Meses) *", min_value=1, value=12, key="input_novo_vigencia")
-
-            try:
-                anos = vigencia_meses // 12
-                meses_restantes =
+                vigencia_meses = st.number_input("Vigência / Período do Reajuste (em Meses) *", min_value=1, value=
