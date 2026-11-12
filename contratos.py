@@ -247,7 +247,7 @@ def executar():
 
     elif opcao == "Gestão de Contratos":
         st.markdown("<h1 style='text-align: center; color: #0c3547;'>📊 Painel de Contratos Ativos</h1>", unsafe_allow_html=True)
-        st.markdown("<p style='text-align: center; color: #666;'>Acompanhe os prazos de vigência e os alertas enviados.</p>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align: center; color: #666;'>Acompanhe os prazos de vigência, status e gerencie renovações ou encerramentos.</p>", unsafe_allow_html=True)
         st.markdown("<br>", unsafe_allow_html=True)
 
         try:
@@ -299,7 +299,6 @@ def executar():
                 
                 display_df.columns = ['ID', 'Cliente', 'Nº Contrato', 'Início', 'Vigência (Meses)', 'Vencimento', 'Dias p/ Vencer', 'Status Atual']
                 
-                # Função de estilização idêntica à do faturamento (Vermelho se vencido, Amarelo se entre 0 e 45 dias)
                 def colorir_linhas_contrato(row_data):
                     idx = row_data.name
                     dias = df.loc[idx, 'dias_restantes']
@@ -310,37 +309,9 @@ def executar():
                     return [''] * len(row_data)
 
                 st.dataframe(display_df.style.apply(colorir_linhas_contrato, axis=1), use_container_width=True, hide_index=True)
-        except Exception as e:
-            st.error(f"Erro ao carregar painel de contratos: {e}")
 
-    elif opcao == "Configurações de E-mail":
-        st.markdown("<h1 style='text-align: center; color: #0c3547;'>⚙️ Configurações de E-mail - Contratos</h1>", unsafe_allow_html=True)
-        st.markdown("<p style='text-align: center; color: #666;'>Configure as credenciais SMTP e o e-mail comercial para as notificações de renovação.</p>", unsafe_allow_html=True)
-        st.markdown("<br>", unsafe_allow_html=True)
+                st.divider()
+                st.subheader("⚙️ Atualização de Status e Renovação")
 
-        provedor = st.selectbox("Provedor SMTP", ["Outlook / Office365", "Gmail"], index=0 if st.session_state["provedor"] == "Outlook / Office365" else 1, key="sel_prov")
-        email_remetente = st.text_input("E-mail Remetente", value=st.session_state["email_remetente"], key="inp_rem")
-        senha_remetente = st.text_input("Senha / Senha de App do Remetente", type="password", value=st.session_state["senha_remetente"], key="inp_sen")
-        email_comercial = st.text_input("E-mail Comercial (Alerta de 45 dias)", value=st.session_state["email_comercial_globex"], key="inp_com")
-
-        if st.button("💾 Salvar Configurações"):
-            st.session_state["provedor"] = st.session_state["sel_prov"]
-            st.session_state["email_remetente"] = st.session_state["inp_rem"]
-            st.session_state["senha_remetente"] = st.session_state["inp_sen"]
-            st.session_state["email_comercial_globex"] = st.session_state["inp_com"]
-
-            if not st.session_state["email_remetente"] or not st.session_state["senha_remetente"] or not st.session_state["email_comercial_globex"]:
-                st.error("Por favor, preencha todos os campos.")
-            else:
-                try:
-                    dados_cfg = {
-                        "id": 1,
-                        "provedor": st.session_state["provedor"],
-                        "email_remetente": st.session_state["email_remetente"],
-                        "senha_remetente": st.session_state["senha_remetente"],
-                        "email_comercial_globex": st.session_state["email_comercial_globex"]
-                    }
-                    supabase.table("config_email").upsert(dados_cfg).execute()
-                    st.success("Configurações guardadas com sucesso!")
-                except Exception as e:
-                    st.error(f"Erro ao salvar: {e}")
+                contrato_id = st.selectbox(
+                    "Selecione
