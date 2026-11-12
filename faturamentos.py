@@ -112,7 +112,7 @@ def calcular_previsao_faturamento(condicao, inicio_dt, dia_fixo=10, pular_mes_at
         if not pular_mes_atual and base_dt > data_fatura:
             mes_prox = base_dt.month % 12 + 1
             ano_prox = base_dt.year + (1 if base_dt.month == 12 else 0)
-            ultimo_dia_prox = calendar.monthrange(ano_prox, mes_prox)[1]
+            ultimo_dia_prox = calendar.monthrange(a_prox, m_prox)[1] if 'a_prox' in locals() else calendar.monthrange(ano_prox, mes_prox)[1]
             penultimo_prox = datetime(ano_prox, mes_prox, ultimo_dia_prox - 1).date()
             data_fatura = ajustar_dia_util(penultimo_prox, "retroceder")
     elif condicao == "Fim do mês":
@@ -128,6 +128,19 @@ def calcular_previsao_faturamento(condicao, inicio_dt, dia_fixo=10, pular_mes_at
     else:
         data_fatura = base_dt
     return data_fatura
+
+def calcular_dias_uteis_restantes(data_alvo, data_atual):
+    """Calcula a distância em dias úteis ignorando sábados (5) e domingos (6)."""
+    if data_alvo <= data_atual:
+        return (data_alvo - data_atual).days
+    
+    dias_uteis = 0
+    cur_date = data_atual + timedelta(days=1)
+    while cur_date <= data_alvo:
+        if cur_date.weekday() < 5:  # Segunda a sexta
+            dias_uteis += 1
+        cur_date += timedelta(days=1)
+    return dias_uteis
 
 def executar_automacao_faturamentos(supabase, config_db):
     remetente = st.session_state.get("fat_email_remetente") or config_db.get("email_remetente")
@@ -146,7 +159,6 @@ def executar_automacao_faturamentos(supabase, config_db):
         response = supabase.table("faturamentos").select("*").eq("status", "Ativo").execute()
         registros = response.data if response and response.data else []
 
-        # Mapeia as datas fim dos contratos para aplicar a mesma regra de limite na automação
         res_cont = supabase.table("contratos").select("num_contrato, data_fim").execute()
         map_vencimentos = {}
         if res_cont and res_cont.data:
@@ -170,7 +182,6 @@ def executar_automacao_faturamentos(supabase, config_db):
             inicio_dt = datetime.strptime(inicio_str, "%Y-%m-%d").date()
             data_fatura = calcular_previsao_faturamento(condicao, inicio_dt, dia_fixo, pular_mes)
 
-            # Aplica a mesma trava da data limite do contrato na automação
             if num_prop in map_vencimentos:
                 try:
                     venc_dt = datetime.strptime(map_vencimentos[num_prop], "%Y-%m-%d").date()
@@ -179,17 +190,17 @@ def executar_automacao_faturamentos(supabase, config_db):
                 except Exception:
                     pass
 
-            dias_restantes = (data_fatura - hoje).days
+            dias_uteis_restantes = calcular_dias_uteis_restantes(data_fatura, hoje)
 
-            if dias_restantes == 2 and alerta_enviado < 1:
+            if dias_uteis_restantes == 2 and alerta_enviado < 1:
                 assunto = f"[ALERTA OPERACIONAL] Preparação de Faturamento - Proposta Nº {num_prop} ({cliente})"
-                corpo = f"Atenção Equipa,\n\nO faturamento para o cliente {cliente} (Proposta Nº {num_prop}, Condição: {condicao}) tem data prevista para {data_fatura.strftime('%d/%m/%Y')}.\nFaltam 2 dias para a data limite de preparação de dados.\n\nAtenciosamente,\nGlobex Multimodal"
+                corpo = f"Atenção Equipa,\n\nO faturamento para o cliente {cliente} (Proposta Nº {num_prop}, Condição: {condicao}) tem data prevista para {data_fatura.strftime('%d/%m/%Y')}.\nFaltam 2 dias úteis para a data limite de preparação de dados.\n\nAtenciosamente,\nGlobex Multimodal"
                 sucesso, err = enviar_email_para_todos(prov, remetente, senha, lista_destinos, assunto, corpo, cliente, num_prop, supabase)
                 if sucesso:
                     supabase.table("faturamentos").update({"alerta_enviado": 1}).eq("id", rid).execute()
                     disparos += 1
 
-            elif dias_restantes == 1 and alerta_enviado < 2:
+            elif dias_uteis_restantes == 1 and alerta_enviado < 2:
                 assunto = f"[ALERTA OPERACIONAL] Véspera de Faturamento - Proposta Nº {num_prop} ({cliente})"
                 corpo = f"Atenção Equipa,\n\nO faturamento para o cliente {cliente} (Proposta Nº {num_prop}, Condição: {condicao}) tem data prevista para AMANHÃ ({data_fatura.strftime('%d/%m/%Y')}).\nCertifiquem-se de que os dados estão prontos.\n\nAtenciosamente,\nGlobex Multimodal"
                 sucesso, err = enviar_email_para_todos(prov, remetente, senha, lista_destinos, assunto, corpo, cliente, num_prop, supabase)
@@ -197,7 +208,7 @@ def executar_automacao_faturamentos(supabase, config_db):
                     supabase.table("faturamentos").update({"alerta_enviado": 2}).eq("id", rid).execute()
                     disparos += 1
 
-            elif dias_restantes == 0 and alerta_enviado < 3:
+            elif dias_uteis_restantes <= 0 and alerta_enviado < 3:
                 assunto = f"[URGENTE - HOJE] Prazo de Faturamento - Proposta Nº {num_prop} ({cliente})"
                 corpo = f"Atenção Equipa,\n\nO faturamento para o cliente {cliente} (Proposta Nº {num_prop}, Condição: {condicao}) tem o prazo de entrega PARA HOJE ({data_fatura.strftime('%d/%m/%Y')}).\n\nO faturamento está finalizado ou a ser finalizado? Por favor, verifiquem com urgência.\n\nAtenciosamente,\nGlobex Multimodal"
                 sucesso, err = enviar_email_para_todos(prov, remetente, senha, lista_destinos, assunto, corpo, cliente, num_prop, supabase)
@@ -543,6 +554,9 @@ def executar():
 
                 previsoes = []
                 status_vigencia = []
+                dias_uteis_lista = []
+                hoje = datetime.now().date()
+
                 for _, row in df.iterrows():
                     d_val = int(row['dia_fixo']) if (row.get('dia_fixo') is not None and pd.notna(row['dia_fixo'])) else 10
                     p_val = bool(row['pular_mes_atual']) if (row.get('pular_mes_atual') is not None and pd.notna(row['pular_mes_atual'])) else False
@@ -551,7 +565,6 @@ def executar():
                     num_p = str(row['id_contrato'])
                     status_str = "Ativo"
 
-                    # LEITURA DA DATA LIMITE DO CONTRATO: Trava a previsão exatamente na data_fim do contrato caso a regra ultrapasse
                     if num_p in map_vencimentos:
                         try:
                             venc_dt = datetime.strptime(map_vencimentos[num_p], "%Y-%m-%d").date()
@@ -563,9 +576,11 @@ def executar():
 
                     previsoes.append(dt_prev.strftime('%d/%m/%Y'))
                     status_vigencia.append(status_str)
+                    dias_uteis_lista.append(calcular_dias_uteis_restantes(dt_prev, hoje))
                 
                 df['previsao_faturamento'] = previsoes
                 df['status_visual'] = status_vigencia
+                df['dias_uteis_restantes'] = dias_uteis_lista
 
                 st.subheader("📋 Faturas e Prazos Ativos")
 
@@ -581,7 +596,17 @@ def executar():
                     'Status / Vigência'
                 ]
                 
-                st.dataframe(display_df, use_container_width=True, hide_index=True)
+                # Função para estilizar as linhas da tabela (Vermelho para hoje, Amarelo para 1 ou 2 dias úteis)
+                def colorir_linhas_faturamento(row_data):
+                    idx = row_data.name
+                    dias = df.loc[idx, 'dias_uteis_restantes']
+                    if dias <= 0:
+                        return ['background-color: #ffe6e6'] * len(row_data)  # Vermelho claro para hoje/vencido
+                    elif dias in [1, 2]:
+                        return ['background-color: #fff3cd'] * len(row_data)  # Amarelo claro para 1 ou 2 dias úteis
+                    return [''] * len(row_data)
+
+                st.dataframe(display_df.style.apply(colorir_linhas_faturamento, axis=1), use_container_width=True, hide_index=True)
 
                 st.divider()
                 st.subheader("🔴 Gestão de Encerramento (Fim de Contrato)")
