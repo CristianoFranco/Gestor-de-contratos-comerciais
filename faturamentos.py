@@ -256,4 +256,516 @@ def executar():
     config_db = carregar_config_email_faturamento(supabase)
 
     if "fat_provedor" not in st.session_state:
-        st.session_state["fat_provedor"] = config_db.get("provedor", "Outlook
+        st.session_state["fat_provedor"] = config_db.get("provedor", "Outlook / Office365")
+    if "fat_email_remetente" not in st.session_state:
+        st.session_state["fat_email_remetente"] = config_db.get("email_remetente", "")
+    if "fat_senha_remetente" not in st.session_state:
+        st.session_state["fat_senha_remetente"] = config_db.get("senha_remetente", "")
+    if "fat_emails_destino" not in st.session_state:
+        st.session_state["fat_emails_destino"] = config_db.get("emails_destino", "")
+
+    with st.sidebar:
+        caminho_logo_side = "Logo.png" if os.path.exists("Logo.png") else ("logo.png" if os.path.exists("logo.png") else None)
+        if caminho_logo_side:
+            st.image(caminho_logo_side, use_container_width=True)
+        else:
+            st.markdown("### 🌐 GLOBEX MULTIMODAL")
+        
+        st.markdown("---")
+        menu = ["Novo / Editar Faturamento", "Painel de Faturamentos Ativos", "Configurações de E-mail", "Gerenciar Logs de Mensagens"]
+        opcao = st.radio("Navegação Faturamentos", menu)
+        st.markdown("---")
+        st.caption("© 2026 Globex Multimodal")
+
+    if opcao == "Novo / Editar Faturamento":
+        st.markdown("<h1 style='text-align: center; color: #0c3547;'>📝 Gestão de Regras de Faturamento</h1>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align: center; color: #666;'>Cadastre novos faturamentos (via Contratos ou Manual Avulso) ou edite lançamentos existentes.</p>", unsafe_allow_html=True)
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        modo = st.radio("Modo de Operação:", ["Novo Faturamento", "Cadastro Manual (Avulso)", "Editar Faturamento Existente"], horizontal=True)
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        if modo == "Novo Faturamento":
+            try:
+                res_contratos = supabase.table("contratos").select("*").execute()
+                lista_contratos = res_contratos.data if res_contratos and res_contratos.data else []
+            except Exception:
+                lista_contratos = []
+
+            propostas_ja_cadastradas = []
+            try:
+                res_fat_todos = supabase.table("faturamentos").select("id_contrato").execute()
+                if res_fat_todos and res_fat_todos.data:
+                    propostas_ja_cadastradas = [str(item['id_contrato']) for item in res_fat_todos.data]
+            except Exception:
+                pass
+
+            contratos_disponiveis = [
+                c for c in lista_contratos 
+                if str(c['num_contrato']) not in propostas_ja_cadastradas and str(c['id']) not in propostas_ja_cadastradas
+            ]
+
+            if not lista_contratos:
+                st.warning("⚠️ Nenhum contrato encontrado na base de dados. Utilize o 'Cadastro Manual (Avulso)' ao lado.")
+            elif not contratos_disponiveis:
+                st.info("💡 Todos os contratos já possuem faturamento configurado ou foram ignorados. Utilize o 'Cadastro Manual (Avulso)' para novos lançamentos.")
+            else:
+                col_sel1, col_sel2 = st.columns([3, 1])
+                with col_sel1:
+                    contrato_escolhido = st.selectbox(
+                        "Selecione o Contrato *",
+                        contratos_disponiveis,
+                        format_func=lambda c: f"Proposta Nº {c['num_contrato']} - {c['cliente']}"
+                    )
+                with col_sel2:
+                    st.markdown("<br>", unsafe_allow_html=True)
+                    if st.button("🗑️ Ignorar Contrato", key="btn_ignorar_contrato"):
+                        try:
+                            reg_ignorado = {
+                                "id_contrato": str(contrato_escolhido['num_contrato']),
+                                "cliente": contrato_escolhido['cliente'],
+                                "condicao": "Fim do mês",
+                                "inicio_periodo": str(datetime.now().date()),
+                                "status": "Ignorado",
+                                "alerta_enviado": 0,
+                                "pular_mes_atual": False
+                            }
+                            supabase.table("faturamentos").insert(reg_ignorado).execute()
+                            st.success(f"Proposta Nº {contrato_escolhido['num_contrato']} ignorada da fila!")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Erro ao ignorar contrato: {e}")
+                
+                numero_proposta = str(contrato_escolhido['num_contrato'])
+                cliente_nome = contrato_escolhido['cliente']
+                email_cobranca = contrato_escolhido.get('email_cliente', '')
+
+                st.markdown("<br>", unsafe_allow_html=True)
+                st.subheader("⚙️ Regras e Condições")
+
+                col_c1, col_c2 = st.columns(2)
+                with col_c1:
+                    condicao = st.selectbox(
+                        "Condição de Faturamento *",
+                        [
+                            "30 dias após inicio",
+                            "Data Fixa",
+                            "Penúltimo dia do mês",
+                            "Fim do mês",
+                            "1º dia útil do mês"
+                        ]
+                    )
+                    
+                    dia_fixo = 10
+                    if condicao == "Data Fixa":
+                        dia_fixo = st.number_input("Dia do mês para faturar:", min_value=1, max_value=31, value=10)
+
+                with col_c2:
+                    inicio_periodo = st.date_input("Início do Período de Faturamento *", datetime.now())
+                    pular_mes_atual = st.checkbox("Pular faturamento do mês atual (começar a partir do mês seguinte)", key="pular_novo")
+
+                data_prevista_preview = calcular_previsao_faturamento(condicao, inicio_periodo, dia_fixo, pular_mes_atual)
+                st.info(f"📅 Previsão de Faturamento Calculada: **{data_prevista_preview.strftime('%d/%m/%Y')}**")
+
+                if st.button("💾 Salvar Regra de Faturamento", key="btn_salvar_fat"):
+                    try:
+                        res_dup = supabase.table("faturamentos").select("id_contrato").eq("id_contrato", numero_proposta).execute()
+                        ja_existe = res_dup.data if res_dup and res_dup.data else []
+                    except Exception:
+                        ja_existe = []
+
+                    if ja_existe:
+                        st.error(f"❌ Erro: Já existe um faturamento registado com o número de proposta '{numero_proposta}'. Proibido duplicar propostas!")
+                    else:
+                        try:
+                            novo_reg = {
+                                "id_contrato": numero_proposta,
+                                "cliente": cliente_nome,
+                                "condicao": condicao,
+                                "dia_fixo": dia_fixo,
+                                "inicio_periodo": str(inicio_periodo),
+                                "email_cliente": email_cobranca,
+                                "status": "Ativo",
+                                "alerta_enviado": 0,
+                                "pular_mes_atual": pular_mes_atual
+                            }
+                            supabase.table("faturamentos").insert(novo_reg).execute()
+                            st.success("Regra de faturamento guardada com sucesso!")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Erro ao salvar no Supabase: {e}")
+
+        elif modo == "Cadastro Manual (Avulso)":
+            st.markdown("### ✍️ Inserção Manual de Contrato / Proposta")
+            st.markdown("<p style='color: #666;'>Preencha os campos abaixo livremente. Este registo ficará exclusivo no Gestor de Faturamentos.</p>", unsafe_allow_html=True)
+            st.markdown("<br>", unsafe_allow_html=True)
+
+            col_m1, col_m2 = st.columns(2)
+            with col_m1:
+                numero_proposta = st.text_input("Número da Proposta / Contrato *", placeholder="Ex: PROP-2026-99")
+            with col_m2:
+                cliente_nome = st.text_input("Nome do Cliente *", placeholder="Nome da Empresa")
+
+            st.markdown("<br>", unsafe_allow_html=True)
+            st.subheader("⚙️ Regras e Condições")
+
+            col_c1, col_c2 = st.columns(2)
+            with col_c1:
+                condicao_man = st.selectbox(
+                    "Condição de Faturamento *",
+                    [
+                        "30 dias após inicio",
+                        "Data Fixa",
+                        "Penúltimo dia do mês",
+                        "Fim do mês",
+                        "1º dia útil do mês"
+                    ],
+                    key="cond_man"
+                )
+                
+                dia_fixo_man = 10
+                if condicao_man == "Data Fixa":
+                    dia_fixo_man = st.number_input("Dia do mês para faturar:", min_value=1, max_value=31, value=10, key="dia_fixo_man")
+
+            with col_c2:
+                inicio_periodo_man = st.date_input("Início do Período de Faturamento *", datetime.now(), key="inicio_man")
+                pular_mes_man = st.checkbox("Pular faturamento do mês atual (começar a partir do mês seguinte)", key="pular_man_avulso")
+
+            data_prevista_preview_man = calcular_previsao_faturamento(condicao_man, inicio_periodo_man, dia_fixo_man, pular_mes_man)
+            st.info(f"📅 Previsão de Faturamento Calculada: **{data_prevista_preview_man.strftime('%d/%m/%Y')}**")
+
+            if st.button("💾 Salvar Regra de Faturamento Manual", key="btn_salvar_fat_manual"):
+                if not numero_proposta or not cliente_nome:
+                    st.error("Por favor, preencha todos os campos obrigatórios (*).")
+                else:
+                    try:
+                        res_dup_man = supabase.table("faturamentos").select("id_contrato").eq("id_contrato", str(numero_proposta).strip()).execute()
+                        ja_existe_man = res_dup_man.data if res_dup_man and res_dup_man.data else []
+                    except Exception:
+                        ja_existe_man = []
+
+                    if ja_existe_man:
+                        st.error(f"❌ Erro: Já existe um faturamento registado com o número de proposta '{numero_proposta}'. O sistema não permite números de propostas duplicados!")
+                    else:
+                        try:
+                            novo_reg_manual = {
+                                "id_contrato": str(numero_proposta).strip(),
+                                "cliente": cliente_nome,
+                                "condicao": condicao_man,
+                                "dia_fixo": dia_fixo_man,
+                                "inicio_periodo": str(inicio_periodo_man),
+                                "email_cliente": "",
+                                "status": "Ativo",
+                                "alerta_enviado": 0,
+                                "pular_mes_atual": pular_mes_man
+                            }
+                            supabase.table("faturamentos").insert(novo_reg_manual).execute()
+                            st.success(f"Regra manual para '{cliente_nome}' guardada com sucesso na Gestão de Faturamentos!")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Erro ao salvar no Supabase: {e}")
+
+        else:
+            df_ativos = pd.DataFrame()
+            try:
+                res_ativos = supabase.table("faturamentos").select("*").eq("status", "Ativo").execute()
+                if res_ativos and res_ativos.data:
+                    df_ativos = pd.DataFrame(res_ativos.data)
+            except Exception:
+                pass
+
+            if df_ativos.empty:
+                st.info("Nenhum faturamento ativo disponível para edição.")
+            else:
+                fat_selecionado_id = st.selectbox(
+                    "Selecione o Faturamento Ativo para Editar:",
+                    df_ativos['id'].tolist(),
+                    format_func=lambda x: f"Proposta Nº {df_ativos[df_ativos['id']==x]['id_contrato'].values[0]} - {df_ativos[df_ativos['id']==x]['cliente'].values[0]}"
+                )
+
+                reg_atual = df_ativos[df_ativos['id'] == fat_selecionado_id].iloc[0]
+
+                st.markdown(f"**Cliente:** {reg_atual['cliente']} | **Proposta Nº:** {reg_atual['id_contrato']}")
+                st.markdown("<br>", unsafe_allow_html=True)
+                st.subheader("⚙️ Atualizar Regras e Condições")
+
+                condicoes_lista = [
+                    "30 dias após inicio",
+                    "Data Fixa",
+                    "Penúltimo dia do mês",
+                    "Fim do mês",
+                    "1º dia útil do mês"
+                ]
+                idx_cond = condicoes_lista.index(reg_atual['condicao']) if reg_atual['condicao'] in condicoes_lista else 0
+
+                col_e1, col_e2 = st.columns(2)
+                with col_e1:
+                    nova_condicao = st.selectbox("Nova Condição de Faturamento *", condicoes_lista, index=idx_cond)
+                    
+                    novo_dia_fixo = 10
+                    if reg_atual.get('dia_fixo') is not None and pd.notna(reg_atual['dia_fixo']):
+                        novo_dia_fixo = int(reg_atual['dia_fixo'])
+                    
+                    if nova_condicao == "Data Fixa":
+                        novo_dia_fixo = st.number_input("Dia do mês para faturar:", min_value=1, max_value=31, value=novo_dia_fixo)
+
+                with col_e2:
+                    dt_inicio_atual = datetime.strptime(reg_atual['inicio_periodo'], "%Y-%m-%d").date()
+                    novo_inicio_periodo = st.date_input("Novo Início do Período *", value=dt_inicio_atual)
+                    pular_atual_val = bool(reg_atual.get('pular_mes_atual', False)) if reg_atual.get('pular_mes_atual') is not None else False
+                    novo_pular_mes = st.checkbox("Pular faturamento do mês atual (começar a partir do mês seguinte)", value=pular_atual_val, key="pular_edit")
+
+                nova_data_preview = calcular_previsao_faturamento(nova_condicao, novo_inicio_periodo, novo_dia_fixo, novo_pular_mes)
+                st.info(f"📅 Nova Previsão de Faturamento Calculada: **{nova_data_preview.strftime('%d/%m/%Y')}**")
+
+                if st.button("💾 Atualizar Regra de Faturamento", key="btn_atualizar_fat"):
+                    try:
+                        dados_atualizados = {
+                            "condicao": nova_condicao,
+                            "dia_fixo": novo_dia_fixo,
+                            "inicio_periodo": str(novo_inicio_periodo),
+                            "pular_mes_atual": novo_pular_mes,
+                            "alerta_enviado": 0
+                        }
+                        supabase.table("faturamentos").update(dados_atualizados).eq("id", fat_selecionado_id).execute()
+                        st.success("Regra de faturamento atualizada e sobrescrita com sucesso no Supabase!")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Erro ao atualizar no Supabase: {e}")
+
+    elif opcao == "Painel de Faturamentos Ativos":
+        st.markdown("<h1 style='text-align: center; color: #0c3547;'>💰 Painel de Faturamentos Ativos</h1>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align: center; color: #666;'>Acompanhe os prazos de preparação, conclua ciclos mensais e encerre contratos quando necessário.</p>", unsafe_allow_html=True)
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        if st.button("🔄 Executar Alertas e Verificar Prazos Agora"):
+            with st.spinner("A verificar prazos e a enviar e-mails operacionais..."):
+                msg = executar_automacao_faturamentos(supabase, config_db)
+                st.success(msg)
+
+        try:
+            df = pd.DataFrame()
+            response = supabase.table("faturamentos").select("*").eq("status", "Ativo").execute()
+            if response and response.data:
+                df = pd.DataFrame(response.data)
+
+            if df.empty:
+                st.info("Nenhum faturamento ativo no momento.")
+            else:
+                try:
+                    res_cont = supabase.table("contratos").select("id, num_contrato, data_fim").execute()
+                    map_contratos = {str(c['id']): str(c['num_contrato']) for c in res_cont.data} if res_cont and res_cont.data else {}
+                    map_vencimentos = {str(c['num_contrato']): str(c['data_fim']) for c in res_cont.data if c.get('num_contrato') and c.get('data_fim')}
+                except Exception:
+                    map_contratos = {}
+                    map_vencimentos = {}
+
+                df['id_contrato_real'] = df['id_contrato'].apply(lambda x: map_contratos.get(str(x), str(x)))
+
+                previsoes = []
+                status_vigencia = []
+                dias_uteis_lista = []
+                hoje = datetime.now().date()
+
+                for _, row in df.iterrows():
+                    d_val = int(row['dia_fixo']) if (row.get('dia_fixo') is not None and pd.notna(row['dia_fixo'])) else 10
+                    p_val = bool(row['pular_mes_atual']) if (row.get('pular_mes_atual') is not None and pd.notna(row['pular_mes_atual'])) else False
+                    dt_prev = calcular_previsao_faturamento(row['condicao'], row['inicio_periodo'], d_val, p_val)
+                    
+                    num_p = str(row['id_contrato'])
+                    status_str = "Ativo"
+
+                    if num_p in map_vencimentos:
+                        try:
+                            venc_dt = datetime.strptime(map_vencimentos[num_p], "%Y-%m-%d").date()
+                            if dt_prev >= venc_dt:
+                                dt_prev = venc_dt
+                                status_str = "⚠️ Último Faturamento (Fim de Contrato Atingido)"
+                        except Exception:
+                            pass
+
+                    if dt_prev < hoje:
+                        inicio_dt = datetime.strptime(row['inicio_periodo'], "%Y-%m-%d").date()
+                        novo_mes = inicio_dt.month % 12 + 1
+                        novo_ano = inicio_dt.year + (1 if inicio_dt.month == 12 else 0)
+                        novo_dia = min(inicio_dt.day, calendar.monthrange(novo_ano, novo_mes)[1])
+                        novo_inicio_str = datetime(novo_ano, novo_mes, novo_dia).strftime("%Y-%m-%d")
+                        
+                        try:
+                            supabase.table("faturamentos").update({
+                                "inicio_periodo": novo_inicio_str,
+                                "alerta_enviado": 0
+                            }).eq("id", row['id']).execute()
+                        except Exception:
+                            pass
+                        
+                        inicio_dt = datetime.strptime(novo_inicio_str, "%Y-%m-%d").date()
+                        dt_prev = calcular_previsao_faturamento(row['condicao'], inicio_dt, d_val, p_val)
+
+                    previsoes.append(dt_prev.strftime('%d/%m/%Y'))
+                    status_vigencia.append(status_str)
+                    dias_uteis_lista.append(calcular_dias_uteis_restantes(dt_prev, hoje))
+                
+                df['previsao_faturamento'] = previsoes
+                df['status_visual'] = status_vigencia
+                df['dias_uteis_restantes'] = dias_uteis_lista
+
+                st.subheader("📋 Faturas e Prazos Ativos")
+
+                display_df = df[['id_contrato_real', 'cliente', 'condicao', 'inicio_periodo', 'previsao_faturamento', 'status_visual']].copy()
+                display_df['inicio_periodo'] = pd.to_datetime(display_df['inicio_periodo']).dt.strftime('%d/%m/%Y')
+                
+                display_df.columns = [
+                    'Número da Proposta', 
+                    'Cliente', 
+                    'Condição', 
+                    'Início Período', 
+                    'Previsão de Faturamento', 
+                    'Status / Vigência'
+                ]
+                
+                def colorir_linhas_faturamento(row_data):
+                    idx = row_data.name
+                    dias = df.loc[idx, 'dias_uteis_restantes']
+                    if dias <= 0:
+                        return ['background-color: #ffe6e6'] * len(row_data)  # Vermelho claro para hoje
+                    elif dias in [1, 2]:
+                        return ['background-color: #fff3cd'] * len(row_data)  # Amarelo claro para 1 ou 2 dias úteis
+                    return [''] * len(row_data)
+
+                st.dataframe(display_df.style.apply(colorir_linhas_faturamento, axis=1), use_container_width=True, hide_index=True)
+
+                st.divider()
+                st.subheader("✅ Concluir Faturamento do Mês (Ação Rápida)")
+                st.markdown("Selecione um cliente abaixo cujo faturamento já foi processado e clique em concluir para avançar automaticamente o ciclo para o mês seguinte.")
+
+                col_concluir1, col_concluir2 = st.columns([3, 1])
+                with col_concluir1:
+                    reg_concluir_id = st.selectbox(
+                        "Selecionar Faturamento para Concluir Ciclo:",
+                        df['id'].tolist(),
+                        format_func=lambda x: f"Cliente: {df[df['id']==x]['cliente'].values[0]} (Proposta: {df[df['id']==x]['id_contrato_real'].values[0]})",
+                        key="sel_concluir_fat"
+                    )
+                with col_concluir2:
+                    st.markdown("<br>", unsafe_allow_html=True)
+                    if st.button("✅ Concluir Mês", key="btn_concluir_mes_ativo"):
+                        reg_alvo = df[df['id'] == reg_concluir_id].iloc[0]
+                        cli_nome = reg_alvo['cliente']
+                        prop_num = str(reg_alvo['id_contrato'])
+                        inicio_str = reg_alvo['inicio_periodo']
+                        
+                        try:
+                            inicio_dt = datetime.strptime(inicio_str, "%Y-%m-%d").date()
+                            novo_mes = inicio_dt.month % 12 + 1
+                            novo_ano = inicio_dt.year + (1 if inicio_dt.month == 12 else 0)
+                            novo_dia = min(inicio_dt.day, calendar.monthrange(novo_ano, novo_mes)[1])
+                            novo_inicio_str = datetime(novo_ano, novo_mes, novo_dia).strftime("%Y-%m-%d")
+                            
+                            supabase.table("faturamentos").update({
+                                "inicio_periodo": novo_inicio_str,
+                                "alerta_enviado": 0
+                            }).eq("id", reg_concluir_id).execute()
+                            
+                            try:
+                                supabase.table("logs_faturamento").insert({
+                                    "data_envio": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                                    "cliente": cli_nome,
+                                    "proposta": prop_num,
+                                    "mensagem": f"Faturamento do ciclo concluído manualmente pelo utilizador. Período avançado para {novo_inicio_str}.",
+                                    "status": "Concluído Manualmente"
+                                }).execute()
+                            except Exception:
+                                pass
+
+                            st.success(f"✅ Faturamento de '{cli_nome}' concluído com sucesso! Período avançado para o próximo ciclo.")
+                            st.toast("Faturamento concluído e ciclo avançado!", icon="✅")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Erro ao concluir faturamento: {e}")
+
+                st.divider()
+                st.subheader("🔴 Gestão de Encerramento (Fim de Contrato)")
+                st.markdown("Selecione um cliente abaixo para encerrá-lo permanentemente.")
+
+                reg_id = st.selectbox(
+                    "Selecionar Registo para Encerrar:",
+                    df['id'].tolist(),
+                    format_func=lambda x: f"Cliente: {df[df['id']==x]['cliente'].values[0]} (Proposta: {df[df['id']==x]['id_contrato_real'].values[0]})",
+                    key="sel_encerrar_contrato"
+                )
+
+                cliente_selecionado = df[df['id'] == reg_id]['cliente'].values[0]
+
+                if st.button(f"🛑 Declarar Fim de Contrato / Encerrar ({cliente_selecionado})"):
+                    try:
+                        supabase.table("faturamentos").update({"status": "Finalizado"}).eq("id", reg_id).execute()
+                        st.success(f"Contrato/Faturamento de '{cliente_selecionado}' encerrado permanentemente com sucesso!")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Erro ao encerrar: {e}")
+        except Exception as e:
+            st.error(f"Erro ao carregar o painel de faturamentos ativos: {e}")
+
+    elif opcao == "Configurações de E-mail":
+        st.markdown("<h1 style='text-align: center; color: #0c3547;'>⚙️ Configurações de E-mail - Faturamentos</h1>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align: center; color: #666;'>Configure as credenciais SMTP e cadastre vários e-mails para receber as notificações operacionais.</p>", unsafe_allow_html=True)
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        provedor = st.selectbox("Provedor SMTP", ["Outlook / Office365", "Gmail"], index=0 if st.session_state["fat_provedor"] == "Outlook / Office365" else 1, key="sel_fat_prov")
+        email_remetente = st.text_input("E-mail Remetente", value=st.session_state["fat_email_remetente"], key="inp_fat_rem")
+        senha_remetente = st.text_input("Senha / Senha de App do Remetente", type="password", value=st.session_state["fat_senha_remetente"], key="inp_fat_sen")
+        
+        emails_destino = st.text_area(
+            "E-mails de Destino (Notificações Operacionais)", 
+            value=st.session_state["fat_emails_destino"],
+            placeholder="Ex: operacional1@globex.com.br, operacional2@globex.com.br, gerente@globex.com.br",
+            key="area_fat_dest"
+        )
+        st.caption("ℹ️ Pode inserir múltiplos endereços de e-mail separando-os por vírgula (`,`) ou ponto e vírgula (`;`).")
+
+        if st.button("💾 Salvar Configurações de Faturamento"):
+            st.session_state["fat_provedor"] = st.session_state["sel_fat_prov"]
+            st.session_state["fat_email_remetente"] = st.session_state["inp_fat_rem"]
+            st.session_state["fat_senha_remetente"] = st.session_state["inp_fat_sen"]
+            st.session_state["fat_emails_destino"] = st.session_state["area_fat_dest"]
+
+            if not st.session_state["fat_email_remetente"] or not st.session_state["fat_senha_remetente"] or not st.session_state["fat_emails_destino"]:
+                st.error("Por favor, preencha todos os campos de e-mail.")
+            else:
+                try:
+                    dados_cfg = {
+                        "id": 1,
+                        "provedor": st.session_state["fat_provedor"],
+                        "email_remetente": st.session_state["fat_email_remetente"],
+                        "senha_remetente": st.session_state["fat_senha_remetente"],
+                        "emails_destino": st.session_state["fat_emails_destino"]
+                    }
+                    supabase.table("config_email_faturamento").upsert(dados_cfg).execute()
+                    st.success("Configurações de e-mail guardadas com sucesso no Supabase!")
+                except Exception as e:
+                    st.error(f"Erro ao salvar configurações: {e}")
+
+    elif opcao == "Gerenciar Logs de Mensagens":
+        st.markdown("<h1 style='text-align: center; color: #0c3547;'>📊 Histórico e Logs de Mensagens</h1>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align: center; color: #666;'>Consulte os registos de todas as notificações e alertas operacionais enviados pelo sistema.</p>", unsafe_allow_html=True)
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        if st.button("🔄 Atualizar Logs"):
+            st.rerun()
+
+        df_logs = pd.DataFrame()
+        try:
+            res_logs = supabase.table("logs_faturamento").select("*").order("data_envio", desc=True).execute()
+            if res_logs and res_logs.data:
+                df_logs = pd.DataFrame(res_logs.data)
+        except Exception as e:
+            st.warning(f"Aviso: Não foi possível carregar os logs (verifique se a tabela 'logs_faturamento' foi criada no Supabase). Erro: {e}")
+
+        if df_logs.empty:
+            st.info("Nenhum log de mensagem registado até ao momento.")
+        else:
+            display_logs = df_logs[['data_envio', 'cliente', 'proposta', 'status', 'mensagem']].copy()
+            display_logs.columns = ['Data / Hora do Envio', 'Cliente', 'Proposta Nº', 'Status do Envio', 'Mensagem Enviada']
+            
+            st.dataframe(display_logs, use_container_width=True, hide_index=True)
