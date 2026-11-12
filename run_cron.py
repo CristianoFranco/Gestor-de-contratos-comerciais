@@ -268,7 +268,7 @@ def rodar_automacao_faturamentos(supabase):
 
 if __name__ == "__main__":
     url = os.environ.get("SUPABASE_URL")
-    key = os.environ.get("SUPABASE_KEY")
+    key = os.environ.get("SUPABASE_KEY") or os.environ.get("SUPABASE_ANON_KEY")
     if url and key:
         db = create_client(url, key)
         print("A iniciar rotinas automáticas em segundo plano...")
