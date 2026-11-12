@@ -5,6 +5,7 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import os
+import calendar
 
 def carregar_config_email(supabase):
     try:
@@ -74,7 +75,7 @@ def executar():
         st.session_state["email_comercial_globex"] = config_db.get("email_comercial_globex", "")
 
     with st.sidebar:
-        caminho_logo_side = "Logo.png" if os.path.exists("Logo.png") else ("logo.png" if os.path.exists("logo.png" ) else None)
+        caminho_logo_side = "Logo.png" if os.path.exists("Logo.png") else ("logo.png" if os.path.exists("logo.png") else None)
         if caminho_logo_side:
             st.image(caminho_logo_side, use_container_width=True)
         else:
@@ -143,7 +144,6 @@ def executar():
                         supabase.table("contratos").insert(novo_reg).execute()
                         st.success("Contrato guardado com sucesso!")
                         
-                        # Limpa as chaves do session_state para esvaziar a tela
                         st.session_state["input_novo_cliente"] = ""
                         st.session_state["input_novo_email"] = ""
                         st.session_state["input_novo_num"] = ""
@@ -228,7 +228,6 @@ def executar():
                                 supabase.table("contratos").update(dados_up).eq("id", cid).execute()
                                 st.success("Contrato atualizado com sucesso!")
                                 
-                                # Limpa campos da edição e reinicia
                                 st.session_state["edit_email_cliente"] = ""
                                 st.session_state["edit_tel_cliente"] = ""
                                 st.session_state["edit_num_contrato"] = ""
@@ -300,16 +299,17 @@ def executar():
                 
                 display_df.columns = ['ID', 'Cliente', 'Nº Contrato', 'Início', 'Vigência (Meses)', 'Vencimento', 'Dias p/ Vencer', 'Status Atual']
                 
-                def colorir_linhas(row_data):
+                # Função de estilização idêntica à do faturamento (Vermelho se vencido, Amarelo se entre 0 e 45 dias)
+                def colorir_linhas_contrato(row_data):
                     idx = row_data.name
                     dias = df.loc[idx, 'dias_restantes']
                     if dias < 0:
-                        return ['background-color: #ffe6e6'] * len(row_data)
+                        return ['background-color: #ffe6e6'] * len(row_data)  # Vermelho claro para vencidos
                     elif 0 <= dias <= 45:
-                        return ['background-color: #fff3cd'] * len(row_data)
+                        return ['background-color: #fff3cd'] * len(row_data)  # Amarelo claro para 0 a 45 dias
                     return [''] * len(row_data)
 
-                st.dataframe(display_df.style.apply(colorir_linhas, axis=1), use_container_width=True, hide_index=True)
+                st.dataframe(display_df.style.apply(colorir_linhas_contrato, axis=1), use_container_width=True, hide_index=True)
         except Exception as e:
             st.error(f"Erro ao carregar painel de contratos: {e}")
 
