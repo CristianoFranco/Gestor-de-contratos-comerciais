@@ -100,4 +100,82 @@ def executar():
             col1, col2 = st.columns(2)
             with col1:
                 nome_cliente = st.text_input("Nome do Cliente *", key="input_novo_cliente")
-                num
+                num_contrato = st.text_input("Número do Contrato *", key="input_novo_num")
+                data_inicio = st.date_input("Data de Início do Contrato", datetime.now(), key="input_novo_inicio")
+            with col2:
+                email_cliente = st.text_input("E-mail do Cliente *", key="input_novo_email")
+                telefone_cliente = st.text_input("Telefone do Cliente *", key="input_novo_tel")
+                vigencia_meses = st.number_input("Vigência / Período do Reajuste (em Meses) *", min_value=1, value=12, key="input_novo_vigencia")
+
+            try:
+                anos = vigencia_meses // 12
+                meses_restantes = vigencia_meses % 12
+                data_fim = data_inicio
+                for _ in range(anos):
+                    data_fim = data_fim.replace(year=data_fim.year + 1)
+                for _ in range(meses_restantes):
+                    novo_mes = data_fim.month % 12 + 1
+                    novo_ano = data_fim.year + (1 if data_fim.month == 12 else 0)
+                    ultimo_dia = calendar.monthrange(novo_ano, novo_mes)[1]
+                    dia = min(data_fim.day, ultimo_dia)
+                    data_fim = data_fim.replace(year=novo_ano, month=novo_mes, day=dia)
+            except Exception:
+                data_fim = data_inicio + timedelta(days=365)
+
+            st.info(f"📅 Previsão de Término / Renovação: {data_fim.strftime('%d/%m/%Y')}")
+
+            if st.button("💾 Salvar Contrato", key="btn_salvar_novo_contrato"):
+                if not nome_cliente or not email_cliente or not num_contrato:
+                    st.error("Por favor, preencha todos os campos obrigatórios (*).")
+                else:
+                    try:
+                        novo_reg = {
+                            "cliente": nome_cliente,
+                            "email_cliente": email_cliente,
+                            "num_contrato": num_contrato,
+                            "telefone": telefone_cliente,
+                            "data_inicio": str(data_inicio),
+                            "vigencia_meses": int(vigencia_meses),
+                            "data_fim": str(data_fim),
+                            "status": "Ativo",
+                            "alerta_45_enviado": 0,
+                            "alerta_30_enviado": 0
+                        }
+                        supabase.table("contratos").insert(novo_reg).execute()
+                        st.success("Contrato guardado com sucesso!")
+                        
+                        st.session_state["input_novo_cliente"] = ""
+                        st.session_state["input_novo_email"] = ""
+                        st.session_state["input_novo_num"] = ""
+                        st.session_state["input_novo_tel"] = ""
+                        st.session_state["input_novo_vigencia"] = 12
+                        
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Erro ao salvar contrato: {e}")
+
+        with aba_editar:
+            st.subheader("Editar / Excluir Contrato Existente")
+
+            try:
+                res_all = supabase.table("contratos").select("*").execute()
+                lista_db = res_all.data if res_all and res_all.data else []
+            except Exception:
+                lista_db = []
+
+            if not lista_db:
+                st.info("Nenhum contrato registado para edição.")
+            else:
+                contrato_selecionado = st.selectbox(
+                    "Selecione o Contrato:",
+                    lista_db,
+                    format_func=lambda c: f"ID {c['id']} - {c['cliente']} ({c['num_contrato']})",
+                    key="select_contrato_editar"
+                )
+
+                if contrato_selecionado:
+                    cid = contrato_selecionado['id']
+                    
+                    col_e1, col_e2 = st.columns(2)
+                    with col_e1:
+                        st.text_input("Nome do Cliente (Fixo)", value=contrato_selecionado['cliente
