@@ -2,7 +2,7 @@ name: Automação Diária Geral (Contratos e Faturamentos)
 
 on:
   schedule:
-    - cron: '0 11 * * *' # Executa todos os dias às 08:00 (Horário de Brasília)
+    - cron: '0 4 * * *' # Executa todos os dias às 04:00 UTC (01:00 da manhã no Horário de Brasília)
   workflow_dispatch: # Permite disparar manualmente a qualquer momento
 
 jobs:
