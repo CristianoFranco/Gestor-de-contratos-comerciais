@@ -237,4 +237,29 @@ def executar():
                 st.error(f"Erro ao carregar contratos: {e}")
             
             if df_edit.empty:
-                st.info("Nenhum contrato
+                st.info("Nenhum contrato cadastrado.")
+            else:
+                lista_ids = df_edit['id'].tolist()
+                if "selected_contract_id" not in st.session_state or st.session_state["selected_contract_id"] not in lista_ids:
+                    st.session_state["selected_contract_id"] = lista_ids[0]
+
+                cid_edit = st.selectbox(
+                    "Selecione o Contrato:",
+                    lista_ids,
+                    index=lista_ids.index(st.session_state["selected_contract_id"]),
+                    key="select_contrato_editar",
+                    format_func=lambda x: f"ID {x} - {df_edit[df_edit['id']==x]['cliente'].values[0]} ({df_edit[df_edit['id']==x]['num_contrato'].values[0]})"
+                )
+                
+                st.session_state["selected_contract_id"] = cid_edit
+                c_data = df_edit[df_edit['id'] == cid_edit].iloc[0]
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.text_input("Nome do Cliente (Fixo)", value=c_data['cliente'], disabled=True, key=f"edit_cliente_{cid_edit}")
+                    
+                    tipo_atual = c_data.get('tipo', 'Contrato')
+                    idx_tipo = 0 if tipo_atual == "Proposta" else 1
+                    novo_tipo = st.selectbox("Tipo *", ["Proposta", "Contrato"], index=idx_tipo, key=f"edit_tipo_{cid_edit}")
+                    
+                    st.text_input("Número da Proposta / Contrato (Fixo)", value=c_data['num_contrato'], disabled=True, key=f"edit_num_{cid
