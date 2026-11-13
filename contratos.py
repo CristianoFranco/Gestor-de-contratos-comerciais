@@ -149,4 +149,314 @@ def executar():
             st.markdown("### 🌐 GLOBEX MULTIMODAL")
         
         st.markdown("---")
-        menu = ["Cadastro de Contrato", "Gestão de Cont
+        menu = ["Cadastro de Contrato", "Gestão de Contratos", "Configurações de E-mail"]
+        opcao = st.radio("Navegação Contratos", menu)
+        st.markdown("---")
+        st.caption("© 2026 Globex Multimodal")
+
+    # Tela 01: Cadastro / Edição
+    if opcao == "Cadastro de Contrato":
+        st.markdown("<h1 style='text-align: center; color: #0c3547;'>📝 Gestão de Cadastros de Contratos</h1>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align: center; color: #666;'>Cadastre novos contratos ou gerencie os registos existentes.</p>", unsafe_allow_html=True)
+        st.markdown("<br>", unsafe_allow_html=True)
+        
+        tab_cad, tab_edit = st.tabs(["➕ Novo Contrato", "✏️ Editar / Excluir Contrato"])
+        
+        with tab_cad:
+            st.subheader("Novo Contrato")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                cliente = st.text_input("Nome do Cliente *", key="nc_cliente")
+                tipo_documento = st.selectbox("Tipo *", ["Proposta", "Contrato"], key="nc_tipo")
+                num_contrato = st.text_input("Número da Proposta / Contrato *", key="nc_num")
+                objeto_documento = st.selectbox("Objeto da Proposta / Contrato *", ["Armazenagem", "Sala"], key="nc_objeto")
+                data_inicio = st.date_input("Data de Início do Contrato", datetime.now(), key="nc_inicio")
+            
+            with col2:
+                email_cliente = st.text_input("E-mail do Cliente *", key="nc_email")
+                telefone_cliente = st.text_input("Telefone do Cliente *", key="nc_tel")
+                vigencia_meses = st.number_input("Vigência / Período do Reajuste (em Meses) *", min_value=1, value=12, step=1, key="nc_vig")
+
+            total_meses = int(vigencia_meses)
+            
+            mes_total_inicial = data_inicio.year * 12 + (data_inicio.month - 1)
+            mes_total_final = mes_total_inicial + total_meses
+            
+            ano_alvo = mes_total_final // 12
+            mes_alvo = (mes_total_final % 12) + 1
+            dia_alvo = data_inicio.day
+            
+            ultimo_dia_mes_alvo = calendar.monthrange(ano_alvo, mes_alvo)[1]
+            if dia_alvo > ultimo_dia_mes_alvo:
+                dia_alvo = ultimo_dia_mes_alvo
+                
+            data_fim_calculada = datetime(ano_alvo, mes_alvo, dia_alvo).date()
+            data_fim_br = data_fim_calculada.strftime('%d/%m/%Y')
+
+            st.info(f"📅 Previsão de Término / Renovação: {data_fim_br}")
+
+            if st.button("💾 Salvar Contrato", key="btn_salvar_novo_contrato"):
+                if not cliente or not num_contrato or not email_cliente:
+                    st.error("Por favor, preencha todos os campos obrigatórios (*).")
+                else:
+                    try:
+                        novo_registro = {
+                            "cliente": cliente,
+                            "tipo": tipo_documento,
+                            "num_contrato": num_contrato,
+                            "objeto": objeto_documento,
+                            "data_inicio": str(data_inicio),
+                            "vigencia_meses": vigencia_meses,
+                            "data_fim": str(data_fim_calculada),
+                            "email_cliente": email_cliente,
+                            "telefone_cliente": telefone_cliente,
+                            "status": "Ativo",
+                            "alerta_45_enviado": 0,
+                            "alerta_30_enviado": 0
+                        }
+                        supabase.table("contratos").insert(novo_registro).execute()
+                        st.success("✅ Contrato cadastrado com sucesso!")
+                        st.toast("Contrato salvo com sucesso!", icon="✅")
+                    except Exception as e:
+                        if "duplicate key" in str(e).lower() or "unique constraint" in str(e).lower():
+                            st.error("Erro: Número de contrato já cadastrado.")
+                        else:
+                            st.error(f"Erro ao salvar: {e}")
+
+        with tab_edit:
+            df_edit = pd.DataFrame()
+            try:
+                response = supabase.table("contratos").select("*").execute()
+                if response and response.data:
+                    df_edit = pd.DataFrame(response.data)
+                    # Ordena estritamente por ID crescente
+                    if 'id' in df_edit.columns:
+                        df_edit = df_edit.sort_values(by='id', ascending=True)
+            except Exception as e:
+                st.error(f"Erro ao carregar contratos: {e}")
+            
+            if df_edit.empty:
+                st.info("Nenhum contrato cadastrado.")
+            else:
+                lista_ids = df_edit['id'].tolist()
+                if "selected_contract_id" not in st.session_state or st.session_state["selected_contract_id"] not in lista_ids:
+                    st.session_state["selected_contract_id"] = lista_ids[0]
+
+                cid_edit = st.selectbox(
+                    "Selecione o Contrato:",
+                    lista_ids,
+                    index=lista_ids.index(st.session_state["selected_contract_id"]),
+                    key="select_contrato_editar",
+                    format_func=lambda x: f"ID {x} - {df_edit[df_edit['id']==x]['cliente'].values[0]} ({df_edit[df_edit['id']==x]['num_contrato'].values[0]})"
+                )
+                
+                st.session_state["selected_contract_id"] = cid_edit
+                c_data = df_edit[df_edit['id'] == cid_edit].iloc[0]
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.text_input("Nome do Cliente (Fixo)", value=c_data['cliente'], disabled=True, key=f"edit_cliente_{cid_edit}")
+                    
+                    tipo_atual = c_data.get('tipo', 'Contrato')
+                    idx_tipo = 0 if tipo_atual == "Proposta" else 1
+                    novo_tipo = st.selectbox("Tipo *", ["Proposta", "Contrato"], index=idx_tipo, key=f"edit_tipo_{cid_edit}")
+                    
+                    st.text_input("Número da Proposta / Contrato (Fixo)", value=c_data['num_contrato'], disabled=True, key=f"edit_num_{cid_edit}")
+                    
+                    objeto_atual = c_data.get('objeto', 'Armazenagem')
+                    idx_obj = 1 if objeto_atual == "Sala" else 0
+                    novo_objeto = st.selectbox("Objeto da Proposta / Contrato *", ["Armazenagem", "Sala"], index=idx_obj, key=f"edit_objeto_{cid_edit}")
+                    
+                    data_inicio_edit = st.date_input("Data de Início", value=datetime.strptime(c_data['data_inicio'], "%Y-%m-%d").date(), key=f"edit_data_{cid_edit}")
+                with col2:
+                    novo_email = st.text_input("E-mail do Cliente *", value=c_data['email_cliente'], key=f"edit_email_{cid_edit}")
+                    novo_tel = st.text_input("Telefone do Cliente *", value=c_data['telefone_cliente'], key=f"edit_tel_{cid_edit}")
+                    nova_vigencia = st.number_input("Vigência (Meses) *", min_value=1, value=int(c_data['vigencia_meses']), step=1, key=f"edit_vig_{cid_edit}")
+                
+                t_meses = int(nova_vigencia)
+                
+                mes_total_ini_ed = data_inicio_edit.year * 12 + (data_inicio_edit.month - 1)
+                mes_total_fim_ed = mes_total_ini_ed + t_meses
+                
+                a_alvo = mes_total_fim_ed // 12
+                m_alvo = (mes_total_fim_ed % 12) + 1
+                d_alvo = data_inicio_edit.day
+                
+                ultimo_d = calendar.monthrange(a_alvo, m_alvo)[1]
+                if d_alvo > ultimo_d:
+                    d_alvo = ultimo_d
+                nova_data_fim = datetime(a_alvo, m_alvo, d_alvo).date()
+
+                st.info(f"📅 Nova Data Fim Recalculada pela Vigência: {nova_data_fim.strftime('%d/%m/%Y')}")
+                
+                forcar_data_fim = st.checkbox("Definir Data Limite de Vigência Manualmente (Término Antecipado / Rescisão)", key=f"chk_forcar_{cid_edit}")
+                if forcar_data_fim:
+                    dt_atual_fim = datetime.strptime(c_data['data_fim'], "%Y-%m-%d").date() if c_data.get('data_fim') else nova_data_fim
+                    nova_data_fim = st.date_input("Nova Data Final de Vigência *", value=dt_atual_fim, key=f"input_nova_fim_{cid_edit}")
+                    st.warning(f"⚠️ A data limite do contrato foi fixada manualmente em: **{nova_data_fim.strftime('%d/%m/%Y')}**. O faturamento respeitará este limite.")
+
+                col_btn_salvar, col_btn_cancelar = st.columns([1, 4])
+                with col_btn_salvar:
+                    if st.button("💾 Salvar Alterações", key=f"btn_salvar_edit_{cid_edit}"):
+                        if not novo_email:
+                            st.error("Preencha o e-mail do cliente obrigatório (*).")
+                        else:
+                            try:
+                                dados_atualizados = {
+                                    "cliente": c_data['cliente'],
+                                    "tipo": novo_tipo,
+                                    "num_contrato": c_data['num_contrato'],
+                                    "objeto": novo_objeto,
+                                    "data_inicio": str(data_inicio_edit),
+                                    "vigencia_meses": nova_vigencia,
+                                    "data_fim": str(nova_data_fim),
+                                    "email_cliente": novo_email,
+                                    "telefone_cliente": novo_tel
+                                }
+                                supabase.table("contratos").update(dados_atualizados).eq("id", cid_edit).execute()
+                                
+                                if "selected_contract_id" in st.session_state:
+                                    del st.session_state["selected_contract_id"]
+                                    
+                                st.success("✅ Contrato atualizado com sucesso!")
+                                st.toast("Alterações salvas com sucesso!", icon="✅")
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Erro ao atualizar: {e}")
+                with col_btn_cancelar:
+                    if st.button("❌ Cancelar Alteração", key=f"btn_cancelar_edit_{cid_edit}"):
+                        st.info("Alteração cancelada.")
+                        st.rerun()
+
+                st.markdown("<br>", unsafe_allow_html=True)
+                st.markdown("---")
+                st.subheader("⚠️ Zona de Exclusão")
+                
+                if st.button("🗑️ Excluir Contrato Permanentemente", key=f"btn_excluir_{cid_edit}"):
+                    try:
+                        supabase.table("contratos").delete().eq("id", cid_edit).execute()
+                        if "selected_contract_id" in st.session_state:
+                            del st.session_state["selected_contract_id"]
+                        
+                        st.success("✅ Contrato excluído permanentemente!")
+                        st.toast("Contrato excluído!", icon="🗑️")
+                        st.rerun()
+                    except Exception as e:
+                        st.error("🚫 **Operação Bloqueada:** Não foi possível excluir o contrato devido a haver faturamentos programados na base de dados.")
+
+    # Tela 02: Painel de Gestão e Ações
+    elif opcao == "Gestão de Contratos":
+        st.markdown("<h1 style='text-align: center; color: #0c3547;'>📊 Painel de Gestão de Contratos</h1>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align: center; color: #666;'>Acompanhe os prazos de vigência, status e gerencie renovações ou encerramentos.</p>", unsafe_allow_html=True)
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        if "automacao_executada" not in st.session_state:
+            msg_auto = executar_automacao_alertas()
+            st.session_state["automacao_executada"] = True
+            if "com sucesso" in msg_auto:
+                st.toast(msg_auto)
+
+        col_btn1, col_btn2 = st.columns([1, 3])
+        with col_btn1:
+            if st.button("🔄 Executar Alertas Manualmente"):
+                msg_res = executar_automacao_alertas()
+                st.toast(msg_res)
+                st.rerun()
+
+        df = pd.DataFrame()
+        try:
+            response = supabase.table("contratos").select("*").execute()
+            if response and response.data:
+                df = pd.DataFrame(response.data)
+        except Exception as e:
+            st.error(f"Erro ao carregar dados do Supabase: {e}")
+
+        if df.empty:
+            st.warning("Nenhum contrato cadastrado.")
+        else:
+            hoje = datetime.now().date()
+            df['data_fim_dt'] = pd.to_datetime(df['data_fim']).dt.date
+            df['dias_restantes'] = df['data_fim_dt'].apply(lambda x: (x - hoje).days)
+            
+            df = df.sort_values(by='dias_restantes', ascending=True)
+
+            total_contratos = len(df)
+            vencidos_df = df[df['dias_restantes'] < 0]
+            vencendo_breve = len(df[(df['dias_restantes'] >= 0) & (df['dias_restantes'] <= 45)])
+            
+            mcol1, mcol2 = st.columns(2)
+            with mcol1:
+                st.markdown(f"""
+                    <div class="metric-card">
+                        <h3 style="margin:0; color:#0c3547;">{total_contratos}</h3>
+                        <p style="margin:0; color:#666;">Total de Contratos</p>
+                    </div>
+                """, unsafe_allow_html=True)
+            with mcol2:
+                st.markdown(f"""
+                    <div class="metric-card metric-card-alert">
+                        <h3 style="margin:0; color:#d90429;">{vencendo_breve + len(vencidos_df)}</h3>
+                        <p style="margin:0; color:#666;">Vencendo em breve / Vencidos (≤ 45 dias)</p>
+                    </div>
+                """, unsafe_allow_html=True)
+
+            st.markdown("<br>", unsafe_allow_html=True)
+            st.subheader("📋 Lista Geral de Contratos")
+            
+            if not vencidos_df.empty:
+                st.error(f"🚨 Atenção: Existem **{len(vencidos_df)}** contrato(s) com prazo de vigência vencido destacados em vermelho!")
+
+            for col_nec in ['tipo', 'objeto']:
+                if col_nec not in df.columns:
+                    df[col_nec] = 'Contrato' if col_nec == 'tipo' else 'Armazenagem'
+
+            display_df = df[['id', 'cliente', 'tipo', 'num_contrato', 'objeto', 'data_inicio', 'vigencia_meses', 'data_fim', 'dias_restantes', 'status']].copy()
+            display_df['data_inicio'] = pd.to_datetime(display_df['data_inicio']).dt.strftime('%d/%m/%Y')
+            display_df['data_fim'] = pd.to_datetime(display_df['data_fim']).dt.strftime('%d/%m/%Y')
+            display_df.columns = ['ID', 'Cliente', 'Tipo', 'Nº Proposta/Contrato', 'Objeto', 'Início', 'Vigência (Meses)', 'Vencimento', 'Dias p/ Vencer', 'Status Atual']
+            
+            def colorir_linhas_contrato(row_data):
+                idx = row_data.name
+                dias = df.loc[idx, 'dias_restantes']
+                if dias < 0:
+                    return ['background-color: #ffe6e6'] * len(row_data)
+                elif 0 <= dias <= 45:
+                    return ['background-color: #fff3cd'] * len(row_data)
+                return [''] * len(row_data)
+
+            st.dataframe(display_df.style.apply(colorir_linhas_contrato, axis=1), use_container_width=True, hide_index=True)
+
+            st.divider()
+            st.subheader("⚙️ Atualização de Status e Renovação")
+
+            contrato_id = st.selectbox(
+                "Selecione o Contrato para Gerir:",
+                df['id'].tolist(),
+                format_func=lambda x: f"ID {x} - {df[df['id']==x]['cliente'].values[0]} ({df[df['id']==x]['num_contrato'].values[0]})"
+            )
+            
+            contrato_atual = df[df['id'] == contrato_id].iloc[0]
+            vencimento_br = datetime.strptime(str(contrato_atual['data_fim']), "%Y-%m-%d").strftime("%d/%m/%Y")
+
+            if contrato_atual['dias_restantes'] < 0:
+                dias_atraso = abs(contrato_atual['dias_restantes'])
+                st.error(f"🚨 **CONTRATO VENCIDO!** | Cliente: {contrato_atual['cliente']} | Status: `{contrato_atual['status']}` | Vencimento: {vencimento_br} ({dias_atraso} dias atrás)")
+            else:
+                st.info(f"Cliente: {contrato_atual['cliente']} | Status: `{contrato_atual['status']}` | Vencimento: {vencimento_br}")
+
+            opcoes_status = [
+                "Ativo",
+                "Informado ao comercial por email",
+                "Informado ao cliente por email",
+                "Em negociação com o cliente",
+                "Renegociado"
+            ]
+            
+            idx_def = opcoes_status.index(contrato_atual['status']) if contrato_atual['status'] in opcoes_status else 0
+            novo_status = st.selectbox("Novo Status:", opcoes_status, index=idx_def)
+
+            if novo_status == "Renegociado":
+                st.warning("🔄 Ao renegociar, o contrato será renovado para o próximo ciclo.")
+                
+                tipo_
