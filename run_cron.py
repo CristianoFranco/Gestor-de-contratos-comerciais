@@ -7,7 +7,7 @@ import pandas as pd
 from supabase import create_client
 
 def obter_feriados_brasil(ano):
-    """Retorna uma lista de datas correspondentes aos feriados nacionais fixos e principais móveis do Brasil para o ano."""
+    """Retorna uma lista de datas correspondentes aos feriados nacionais fixos do Brasil para o ano."""
     feriados = [
         datetime(ano, 1, 1).date(),   # Confraternização Universal
         datetime(ano, 4, 21).date(),  # Tiradentes
@@ -19,9 +19,6 @@ def obter_feriados_brasil(ano):
         datetime(ano, 11, 20).date(), # Consciência Negra
         datetime(ano, 12, 25).date(), # Natal
     ]
-    
-    # Cálculo aproximado da Páscoa / Carnaval / Corpus Christi (ou feriados móveis relevantes se necessário)
-    # Para maior precisão, podemos adicionar a verificação de dias festivos móveis ou focar nos nacionais fixos e facultativos.
     return feriados
 
 def eh_dia_util(data):
@@ -72,13 +69,28 @@ def enviar_email(provedor, remetente, senha, destino, assunto, corpo):
     except Exception as e:
         return False, str(e)
 
+def registrar_log(supabase_client, tipo, destinatario, assunto, status, detalhes):
+    """Regista os disparos do cron na tabela logs_envios do Supabase."""
+    try:
+        log_data = {
+            "tipo": tipo,
+            "destinatario": destinatario,
+            "assunto": assunto,
+            "status": status,
+            "detalhes": detalhes,
+            "data_envio": datetime.now().isoformat()
+        }
+        supabase_client.table("logs_envios").insert(log_data).execute()
+    except Exception:
+        pass
+
 def executar_cron_faturamentos():
     try:
-        url = os.environ.get("SUPABASE_URL") or st.secrets.get("SUPABASE_URL")
-        key = os.environ.get("SUPABASE_KEY") or st.secrets.get("SUPABASE_KEY")
-    except Exception:
         url = os.environ.get("SUPABASE_URL")
         key = os.environ.get("SUPABASE_KEY")
+    except Exception:
+        url = None
+        key = None
 
     if not url or not key:
         print("Erro: Credenciais do Supabase não encontradas.")
@@ -124,12 +136,12 @@ def executar_cron_faturamentos():
         email_cliente = fat.get('email_cliente')
         alerta_atual = fat.get('alerta_envidado', 0)
         
-        if not email_cliente or email_cliente.upper() == "NULL" or email_cliente.upper() == "EMPTY":
+        if not email_cliente or str(email_cliente).upper() in ["NULL", "EMPTY", "NONE"]:
             continue
 
         data_inicio = datetime.strptime(str(data_inicio_str)[:10], "%Y-%m-%d").date()
 
-        # Calcula a data prevista de faturamento com base na condição
+        # Condição de faturamento
         if condicao == "Data Fixa":
             dia_f = int(fat.get('dia_fixo', 1))
             try:
@@ -145,11 +157,9 @@ def executar_cron_faturamentos():
                 proximo_mes = datetime(hoje.year, hoje.month + 1, 1)
             data_prevista = (proximo_mes - timedelta(days=1)).date()
 
-        # Se a data prevista já passou ou é hoje
         if data_prevista < hoje:
             continue
 
-        # Calcula dias úteis restantes até o vencimento/faturamento (ignorando fins de semana e feriados)
         dias_uteis = calcular_dias_uteis_ate(data_prevista, hoje)
         
         disparar = False
@@ -174,15 +184,21 @@ def executar_cron_faturamentos():
 
             sucesso, msg_err = enviar_email(provedor, remetente, senha, email_cliente, assunto, corpo)
             
-            # Se houver e-mail comercial configurado, envia cópia também
+            if sucesso:
+                registrar_log(supabase, f"Cron - {tipo_alerta}", email_cliente, assunto, "Sucesso", f"Faturamento ID {fid} - Contrato {id_contrato}")
+            else:
+                registrar_log(supabase, f"Cron - {tipo_alerta}", email_cliente, assunto, "Erro", msg_err)
+
+            # Envia cópia para o comercial
             if comercial and comercial.strip():
-                enviar_email(provedor, remetente, senha, comercial, f"[COMERCIAL] {assunto}", corpo)
+                sucesso_com, err_com = enviar_email(provedor, remetente, senha, comercial, f"[COMERCIAL] {assunto}", corpo)
+                if sucesso_com:
+                    registrar_log(supabase, f"Cron (Comercial) - {tipo_alerta}", comercial, f"[COMERCIAL] {assunto}", "Sucesso", f"Faturamento ID {fid}")
+                else:
+                    registrar_log(supabase, f"Cron (Comercial) - {tipo_alerta}", comercial, f"[COMERCIAL] {assunto}", "Erro", err_com)
 
             if sucesso:
                 supabase.table("faturamentos").update({"alerta_envidado": novo_alerta}).eq("id", fid).execute()
-                print(f"Alerta ({tipo_alerta}) enviado para {email_cliente} referente ao faturamento ID {fid}.")
-            else:
-                print(f"Erro ao enviar e-mail para ID {fid}: {msg_err}")
 
 if __name__ == "__main__":
     executar_cron_faturamentos()
