@@ -82,6 +82,21 @@ def executar():
         except Exception as e:
             return False, str(e)
 
+    def registrar_log(supabase_client, tipo, destinatario, assunto, status, detalhes):
+        """Regista os disparos de e-mail na tabela logs_envios do Supabase."""
+        try:
+            log_data = {
+                "tipo": tipo,
+                "destinatario": destinatario,
+                "assunto": assunto,
+                "status": status,
+                "detalhes": detalhes,
+                "data_envio": datetime.now().isoformat()
+            }
+            supabase_client.table("logs_envios").insert(log_data).execute()
+        except Exception:
+            pass
+
     def executar_automacao_alertas():
         remetente = st.session_state.get("email_remetente") or config_db.get("email_remetente")
         senha = st.session_state.get("senha_remetente") or config_db.get("senha_remetente")
@@ -122,7 +137,10 @@ def executar():
                     sucesso, err = enviar_email(prov, remetente, senha, comercial, assunto, corpo)
                     if sucesso:
                         supabase.table("contratos").update({"alerta_45_enviado": 1, "status": "Informado ao comercial por email"}).eq("id", cid).execute()
+                        registrar_log(supabase, "Alerta 45 Dias (Comercial)", comercial, assunto, "Sucesso", f"Contrato {num_contrato} - {cliente}")
                         disparos_45 += 1
+                    else:
+                        registrar_log(supabase, "Alerta 45 Dias (Comercial)", comercial, assunto, "Erro", err)
 
                 # 30 dias -> Cliente
                 elif dias_restantes <= 30 and a30 == 0:
@@ -132,7 +150,10 @@ def executar():
                     sucesso, err = enviar_email(prov, remetente, senha, email_cliente, assunto, corpo)
                     if sucesso:
                         supabase.table("contratos").update({"alerta_30_enviado": 1, "status": "Informado ao cliente por email"}).eq("id", cid).execute()
+                        registrar_log(supabase, "Alerta 30 Dias (Cliente)", email_cliente, assunto, "Sucesso", f"Contrato {num_contrato} - {cliente}")
                         disparos_30 += 1
+                    else:
+                        registrar_log(supabase, "Alerta 30 Dias (Cliente)", email_cliente, assunto, "Erro", err)
 
             if disparos_45 > 0 or disparos_30 > 0:
                 return f"Automação executada com sucesso! Comercial: {disparos_45} | Cliente: {disparos_30}"
@@ -149,7 +170,7 @@ def executar():
             st.markdown("### 🌐 GLOBEX MULTIMODAL")
         
         st.markdown("---")
-        menu = ["Cadastro de Contrato", "Gestão de Contratos", "Configurações de E-mail"]
+        menu = ["Cadastro de Contrato", "Gestão de Contratos", "Configurações de E-mail", "Logs de Mensagens"]
         opcao = st.radio("Navegação Contratos", menu)
         st.markdown("---")
         st.caption("© 2026 Globex Multimodal")
@@ -230,7 +251,6 @@ def executar():
                 response = supabase.table("contratos").select("*").execute()
                 if response and response.data:
                     df_edit = pd.DataFrame(response.data)
-                    # Ordena estritamente por ID crescente
                     if 'id' in df_edit.columns:
                         df_edit = df_edit.sort_values(by='id', ascending=True)
             except Exception as e:
@@ -459,4 +479,151 @@ def executar():
             if novo_status == "Renegociado":
                 st.warning("🔄 Ao renegociar, o contrato será renovado para o próximo ciclo.")
                 
-                tipo_
+                tipo_reajuste = st.radio("Reajuste:", ["Manter Vigência em Meses", "Ajustar Data Fim Manualmente"])
+                
+                nova_data_inicio = datetime.now().date()
+                if tipo_reajuste == "Manter Vigência em Meses":
+                    novos_meses = st.number_input("Nova Vigência (meses)", min_value=1, value=int(contrato_atual['vigencia_meses']))
+                    t_m = int(novos_meses)
+                    
+                    mes_tot_ren = nova_data_inicio.year * 12 + (nova_data_inicio.month - 1) + t_m
+                    a_a = mes_tot_ren // 12
+                    m_a = (mes_tot_ren % 12) + 1
+                    d_a = nova_data_inicio.day
+                    ultimo_d_a = calendar.monthrange(a_a, m_a)[1]
+                    if d_a > ultimo_d_a:
+                        d_a = ultimo_d_a
+                    nova_data_fim = datetime(a_a, m_a, d_a).date()
+                else:
+                    novos_meses = contrato_atual['vigencia_meses']
+                    nova_data_fim = st.date_input("Nova Data Fim", nova_data_inicio + timedelta(days=365))
+
+                if st.button("✅ Confirmar Renegociação / Renovação"):
+                    try:
+                        dados_renovacao = {
+                            "status": "Ativo",
+                            "data_inicio": str(nova_data_inicio),
+                            "vigencia_meses": novos_meses,
+                            "data_fim": str(nova_data_fim),
+                            "alerta_45_enviado": 0,
+                            "alerta_30_enviado": 0
+                        }
+                        supabase.table("contratos").update(dados_renovacao).eq("id", contrato_id).execute()
+                        st.success("✅ Contrato renegociado e renovado com sucesso!")
+                        st.toast("Contrato renegociado com sucesso!", icon="🔄")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Erro ao renegociar: {e}")
+
+            else:
+                col_acao1, col_acao2 = st.columns(2)
+                with col_acao1:
+                    if st.button("💾 Salvar Status"):
+                        try:
+                            supabase.table("contratos").update({"status": novo_status}).eq("id", contrato_id).execute()
+                            st.success("✅ Status atualizado com sucesso!")
+                            st.toast("Status atualizado!", icon="💾")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Erro ao atualizar status: {e}")
+                
+                with col_acao2:
+                    if st.button("🔒 Encerrar Contrato (Remover do Painel)"):
+                        id_contrato_alvo = str(contrato_id).strip()
+                        num_contrato_alvo = str(contrato_atual['num_contrato']).strip()
+                        
+                        faturamento_ativo_encontrado = False
+                        try:
+                            res_fat = supabase.table("faturamentos").select("*").execute()
+                            if res_fat.data:
+                                df_fat = pd.DataFrame(res_fat.data)
+                                if 'id_contrato' in df_fat.columns and 'status' in df_fat.columns:
+                                    match_fat = df_fat[
+                                        (
+                                            (df_fat['id_contrato'].astype(str).str.strip() == id_contrato_alvo) | 
+                                            (df_fat['id_contrato'].astype(str).str.strip() == num_contrato_alvo)
+                                        ) & 
+                                        (df_fat['status'].astype(str).str.strip().str.lower() == 'ativo')
+                                    ]
+                                    if not match_fat.empty:
+                                        faturamento_ativo_encontrado = True
+                        except Exception:
+                            pass
+
+                        if faturamento_ativo_encontrado:
+                            st.error("🚫 **Operação Bloqueada:** Não foi possível excluir o contrato devido a haver faturamentos programados ou ativos vinculados. Por favor, encerre os faturamentos associados primeiro.")
+                        else:
+                            try:
+                                supabase.table("contratos").delete().eq("id", contrato_id).execute()
+                                st.success("✅ Contrato encerrado e removido do painel com sucesso!")
+                                st.toast("Contrato encerrado com sucesso!", icon="🔒")
+                                st.rerun()
+                            except Exception as e:
+                                st.error("🚫 **Operação Bloqueada:** Não foi possível excluir o contrato devido a haver faturamentos programados na base de dados.")
+
+    # Tela 03: Configurações de E-mail
+    elif opcao in ["Configurações de E-mail", "Configuração de E-mail"]:
+        st.markdown("<h1 style='text-align: center; color: #0c3547;'>⚙️ Configurações de E-mail</h1>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align: center; color: #666;'>Configure as credenciais para disparos automáticos. Os dados ficam salvos de forma segura na nuvem.</p>", unsafe_allow_html=True)
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        provedor = st.selectbox("Provedor", ["Outlook / Office365", "Gmail"], index=0 if st.session_state.get("provedor") == "Outlook / Office365" else 1)
+        email_remetente = st.text_input("E-mail Remetente", value=st.session_state.get("email_remetente", ""))
+        senha_remetente = st.text_input("Senha / Senha de App", type="password", value=st.session_state.get("senha_remetente", ""))
+        email_comercial = st.text_input("E-mail do Comercial Globex", value=st.session_state.get("email_comercial_globex", ""))
+
+        if st.button("💾 Salvar Configurações"):
+            if not email_remetente or not senha_remetente or not email_comercial:
+                st.error("Preencha todos os campos de e-mail.")
+            else:
+                try:
+                    dados_config = {
+                        "id": 1,
+                        "provedor": provedor,
+                        "email_remetente": email_remetente,
+                        "senha_remetente": senha_remetente,
+                        "email_comercial_globex": email_comercial
+                    }
+                    supabase.table("config_email").upsert(dados_config).execute()
+                    
+                    st.session_state["provedor"] = provedor
+                    st.session_state["email_remetente"] = email_remetente
+                    st.session_state["senha_remetente"] = senha_remetente
+                    st.session_state["email_comercial_globex"] = email_comercial
+                    
+                    st.success("✅ Configurações salvas com sucesso no Supabase!")
+                    st.toast("Configurações salvas com sucesso!", icon="💾")
+                except Exception as e:
+                    st.error(f"Erro ao salvar configurações no banco: {e}")
+
+    # Tela 04: Logs de Mensagens
+    elif opcao == "Logs de Mensagens":
+        st.markdown("<h1 style='text-align: center; color: #0c3547;'>📜 Logs de Mensagens e Alertas</h1>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align: center; color: #666;'>Consulte o histórico de disparos de e-mails realizados pelo sistema.</p>", unsafe_allow_html=True)
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        if st.button("🔄 Atualizar Logs"):
+            st.rerun()
+
+        df_logs = pd.DataFrame()
+        try:
+            res_logs = supabase.table("logs_envios").select("*").order("data_envio", desc=True).limit(100).execute()
+            if res_logs.data:
+                df_logs = pd.DataFrame(res_logs.data)
+        except Exception as e:
+            st.error(f"Erro ao carregar logs: {e}")
+
+        if df_logs.empty:
+            st.info("Nenhum log de mensagem registado até o momento.")
+        else:
+            df_logs['data_envio'] = pd.to_datetime(df_logs['data_envio']).dt.strftime('%d/%m/%Y %H:%M:%S')
+            df_exibicao = df_logs[['data_envio', 'tipo', 'destinatario', 'assunto', 'status', 'detalhes']].copy()
+            df_exibicao.columns = ['Data/Hora', 'Tipo de Alerta', 'Destinatário', 'Assunto', 'Status', 'Detalhes']
+
+            def colorir_status_log(row):
+                if row['Status'] == 'Sucesso':
+                    return ['background-color: #e6ffed'] * len(row)
+                else:
+                    return ['background-color: #ffe6e6'] * len(row)
+
+            st.dataframe(df_exibicao.style.apply(colorir_status_log, axis=1), use_container_width=True, hide_index=True)
