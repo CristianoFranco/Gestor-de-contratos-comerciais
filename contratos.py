@@ -142,34 +142,59 @@ def executar():
                 a45 = item['alerta_45_enviado']
                 a30 = item['alerta_30_enviado']
                 
-                data_fim = datetime.strptime(data_fim_str, "%Y-%m-%d").date()
+                # Captura Tipo e Objeto cadastrados (com fallback caso esteja vazio)
+                tipo_doc = item.get('tipo', 'Contrato')
+                objeto_doc = item.get('objeto', 'Armazenagem')
+                
+                data_fim = datetime.strptime(str(data_fim_str)[:10], "%Y-%m-%d").date()
                 dias_restantes = (data_fim - hoje).days
 
                 # 45 dias -> Comercial Globex
                 if dias_restantes <= 45 and dias_restantes > 30 and a45 == 0:
-                    assunto = f"[ALERTA RENOVAÇÃO] Contrato próximo de vencer - {cliente}"
-                    corpo = f"Atenção Comercial Globex,\n\nExiste um contrato próximo ao período de renovação.\n\nCliente: {cliente}\nNº Contrato: {num_contrato}\nData de Vencimento: {data_fim.strftime('%d/%m/%Y')}\nDias restantes: {dias_restantes}"
+                    assunto = f"[ALERTA RENOVAÇÃO] {tipo_doc} próxima de vencer - {cliente}"
+                    corpo = (
+                        f"Atenção Comercial Globex,\n\n"
+                        f"Existe um documento próximo ao período de renovação.\n\n"
+                        f"• Cliente: {cliente}\n"
+                        f"• Tipo: {tipo_doc}\n"
+                        f"• Objeto: {objeto_doc}\n"
+                        f"• Nº Documento: {num_contrato}\n"
+                        f"• Data de Vencimento: {data_fim.strftime('%d/%m/%Y')}\n"
+                        f"• Dias restantes: {dias_restantes}\n\n"
+                        f"Atenciosamente,\nGlobex Multimodal"
+                    )
                     
                     sucesso, err = enviar_email(prov, remetente, senha, comercial, assunto, corpo)
                     if sucesso:
                         supabase.table("contratos").update({"alerta_45_enviado": 1, "status": "Informado ao comercial por email"}).eq("id", cid).execute()
-                        registrar_log(supabase, "Alerta 45 Dias (Comercial)", comercial, assunto, "Sucesso", f"Contrato {num_contrato} - {cliente}")
+                        registrar_log(supabase, f"Alerta 45 Dias (Comercial) - {tipo_doc}", comercial, assunto, "Sucesso", f"{tipo_doc} {num_contrato} ({objeto_doc}) - {cliente}")
                         disparos_45 += 1
                     else:
-                        registrar_log(supabase, "Alerta 45 Dias (Comercial)", comercial, assunto, "Erro", err)
+                        registrar_log(supabase, f"Alerta 45 Dias (Comercial) - {tipo_doc}", comercial, assunto, "Erro", err)
 
-                # 30 dias -> Cliente
+                # 30 dias -> Cliente (Seguindo o mesmo padrão estruturado do comercial)
                 elif dias_restantes <= 30 and a30 == 0:
-                    assunto = f"Globex Multimodal - Renovação de Contrato Nº {num_contrato}"
-                    corpo = f"Prezado(a) cliente {cliente},\n\nSeu contrato está chegando próximo à renovação. Aguarde contato da Globex.\n\nAtenciosamente,\nGlobex Multimodal"
+                    assunto = f"Globex Multimodal - Renovação de {tipo_doc} Nº {num_contrato} ({objeto_doc})"
+                    corpo = (
+                        f"Prezado(a) cliente {cliente},\n\n"
+                        f"Existe um documento próximo ao período de renovação.\n\n"
+                        f"• Cliente: {cliente}\n"
+                        f"• Tipo: {tipo_doc}\n"
+                        f"• Objeto: {objeto_doc}\n"
+                        f"• Nº Documento: {num_contrato}\n"
+                        f"• Data de Vencimento: {data_fim.strftime('%d/%m/%Y')}\n"
+                        f"• Dias restantes: {dias_restantes}\n\n"
+                        f"Aguarde o contato de nossa equipe.\n\n"
+                        f"Atenciosamente,\nGlobex Multimodal"
+                    )
                     
                     sucesso, err = enviar_email(prov, remetente, senha, email_cliente, assunto, corpo)
                     if sucesso:
                         supabase.table("contratos").update({"alerta_30_enviado": 1, "status": "Informado ao cliente por email"}).eq("id", cid).execute()
-                        registrar_log(supabase, "Alerta 30 Dias (Cliente)", email_cliente, assunto, "Sucesso", f"Contrato {num_contrato} - {cliente}")
+                        registrar_log(supabase, f"Alerta 30 Dias (Cliente) - {tipo_doc}", email_cliente, assunto, "Sucesso", f"{tipo_doc} {num_contrato} ({objeto_doc}) - {cliente}")
                         disparos_30 += 1
                     else:
-                        registrar_log(supabase, "Alerta 30 Dias (Cliente)", email_cliente, assunto, "Erro", err)
+                        registrar_log(supabase, f"Alerta 30 Dias (Cliente) - {tipo_doc}", email_cliente, assunto, "Erro", err)
 
             if disparos_45 > 0 or disparos_30 > 0:
                 return f"Automação executada com sucesso! Comercial: {disparos_45} | Cliente: {disparos_30}"
