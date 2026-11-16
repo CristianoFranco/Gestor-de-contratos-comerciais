@@ -32,8 +32,8 @@ def eh_dia_util(data):
         
     return True
 
-def calcular_dias_uteis_ate(data_alvo, data_atual):
-    """Calcula a quantidade de dias úteis entre a data atual e a data alvo (excluindo fins de semana e feriados)."""
+def calcular_dias_uteis_ate(data_atual, data_alvo):
+    """Calcula a quantidade exata de dias úteis entre a data atual e a data alvo (excluindo fins de semana e feriados)."""
     if data_atual >= data_alvo:
         return 0
     
@@ -160,11 +160,16 @@ def executar_cron_faturamentos():
         if data_prevista < hoje:
             continue
 
-        dias_uteis = calcular_dias_uteis_ate(data_prevista, hoje)
+        # Calcula quantos dias úteis exatos faltam de hoje até a data prevista
+        dias_uteis = calcular_dias_uteis_ate(hoje, data_prevista)
         
         disparar = False
         tipo_alerta = ""
 
+        # Lógica corrigida e progressiva:
+        # dias_uteis == 2 -> 2 dias úteis antes (ex: quinta se vence segunda, ou sexta se vence terça)
+        # dias_uteis == 1 -> 1 dia útil antes (ex: sexta se vence segunda, ou segunda se vence terça)
+        # dias_uteis == 0 -> No próprio dia do faturamento
         if dias_uteis == 2 and alerta_atual < 1:
             disparar = True
             novo_alerta = 1
