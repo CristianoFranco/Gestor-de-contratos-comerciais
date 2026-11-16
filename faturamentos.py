@@ -43,7 +43,7 @@ def enviar_email_para_todos(provedor, email_remetente, senha, lista_destinos, as
                 msg['To'] = destino
                 msg['Subject'] = assunto
                 msg.attach(MIMEText(mensagem, 'plain'))
-                server.send_message(msg)
+                server.sendmail(email_remetente, destino, msg.as_string())
                 sucessos += 1
             except Exception as ex:
                 erros.append(f"{destino}: {ex}")
@@ -67,8 +67,28 @@ def enviar_email_para_todos(provedor, email_remetente, senha, lista_destinos, as
     except Exception as e:
         return False, str(e)
 
+def obter_feriados_brasil(ano):
+    return [
+        datetime(ano, 1, 1).date(),
+        datetime(ano, 4, 21).date(),
+        datetime(ano, 5, 1).date(),
+        datetime(ano, 9, 7).date(),
+        datetime(ano, 10, 12).date(),
+        datetime(ano, 11, 2).date(),
+        datetime(ano, 11, 15).date(),
+        datetime(ano, 11, 20).date(),
+        datetime(ano, 12, 25).date(),
+    ]
+
+def eh_dia_util(data):
+    if data.weekday() >= 5:
+        return False
+    if data in obter_feriados_brasil(data.year):
+        return False
+    return True
+
 def ajustar_dia_util(data_obj, direcao="retroceder"):
-    while data_obj.weekday() >= 5:
+    while not eh_dia_util(data_obj):
         if direcao == "retroceder":
             data_obj -= timedelta(days=1)
         else:
@@ -135,7 +155,7 @@ def calcular_dias_uteis_restantes(data_alvo, data_atual):
     dias_uteis = 0
     cur_date = data_atual + timedelta(days=1)
     while cur_date <= data_alvo:
-        if cur_date.weekday() < 5:
+        if eh_dia_util(cur_date):
             dias_uteis += 1
         cur_date += timedelta(days=1)
     return dias_uteis
@@ -202,32 +222,65 @@ def executar_automacao_faturamentos(supabase, config_db):
 
             dias_uteis_restantes = calcular_dias_uteis_restantes(data_fatura, hoje)
 
+            # 2 dias úteis antes
             if dias_uteis_restantes == 2 and alerta_enviado < 1:
                 assunto = f"[ALERTA OPERACIONAL] Preparação de Faturamento - Proposta Nº {num_prop} ({cliente})"
-                corpo = f"Atenção Equipa,\n\nO faturamento para o cliente {cliente} (Proposta Nº {num_prop}, Condição: {condicao}) tem data prevista para {data_fatura.strftime('%d/%m/%Y')}.\nFaltam 2 dias úteis para a data limite de preparação de dados.\n\nAtenciosamente,\nGlobex Multimodal"
+                corpo = (
+                    f"Atenção Equipe Operacional,\n\n"
+                    f"Este é um aviso automático de preparação de faturamento.\n\n"
+                    f"• Cliente: {cliente}\n"
+                    f"• Nº Proposta / Contrato: {num_prop}\n"
+                    f"• Condição de Faturamento: {condicao}\n"
+                    f"• Data Prevista: {data_fatura.strftime('%d/%m/%Y')}\n"
+                    f"• Status: Faltam 2 dias úteis para a data limite de preparação dos dados\n\n"
+                    f"Por favor, certifiquem-se de que as medições e informações operacionais estão em andamento.\n\n"
+                    f"Atenciosamente,\nGlobex Multimodal"
+                )
                 sucesso, err = enviar_email_para_todos(prov, remetente, senha, lista_destinos, assunto, corpo, cliente, num_prop, supabase)
                 if sucesso:
                     supabase.table("faturamentos").update({"alerta_enviado": 1}).eq("id", rid).execute()
                     disparos += 1
 
+            # 1 dia útil antes
             elif dias_uteis_restantes == 1 and alerta_enviado < 2:
                 assunto = f"[ALERTA OPERACIONAL] Véspera de Faturamento - Proposta Nº {num_prop} ({cliente})"
-                corpo = f"Atenção Equipa,\n\nO faturamento para o cliente {cliente} (Proposta Nº {num_prop}, Condição: {condicao}) tem data prevista para AMANHÃ ({data_fatura.strftime('%d/%m/%Y')}).\nCertifiquem-se de que os dados estão prontos.\n\nAtenciosamente,\nGlobex Multimodal"
+                corpo = (
+                    f"Atenção Equipe Operacional,\n\n"
+                    f"Este é um aviso de véspera de faturamento.\n\n"
+                    f"• Cliente: {cliente}\n"
+                    f"• Nº Proposta / Contrato: {num_prop}\n"
+                    f"• Condição de Faturamento: {condicao}\n"
+                    f"• Data Prevista: AMANHÃ ({data_fatura.strftime('%d/%m/%Y')})\n"
+                    f"• Status: 1 dia útil restante para emissão/envio\n\n"
+                    f"Certifiquem-se de que todos os dados estão prontos para o faturamento de amanhã.\n\n"
+                    f"Atenciosamente,\nGlobex Multimodal"
+                )
                 sucesso, err = enviar_email_para_todos(prov, remetente, senha, lista_destinos, assunto, corpo, cliente, num_prop, supabase)
                 if sucesso:
                     supabase.table("faturamentos").update({"alerta_enviado": 2}).eq("id", rid).execute()
                     disparos += 1
 
+            # No próprio dia (0 dias úteis restantes)
             elif dias_uteis_restantes <= 0 and alerta_enviado < 3:
                 assunto = f"[URGENTE - HOJE] Prazo de Faturamento - Proposta Nº {num_prop} ({cliente})"
-                corpo = f"Atenção Equipa,\n\nO faturamento para o cliente {cliente} (Proposta Nº {num_prop}, Condição: {condicao}) tem o prazo de entrega PARA HOJE ({data_fatura.strftime('%d/%m/%Y')}).\n\nO faturamento está finalizado ou a ser finalizado? Por favor, verifiquem com urgência.\n\nAtenciosamente,\nGlobex Multimodal"
+                corpo = (
+                    f"Atenção Equipe Operacional,\n\n"
+                    f"O prazo limite para a realização do faturamento é HOJE.\n\n"
+                    f"• Cliente: {cliente}\n"
+                    f"• Nº Proposta / Contrato: {num_prop}\n"
+                    f"• Condição de Faturamento: {condicao}\n"
+                    f"• Data Prevista: HOJE ({data_fatura.strftime('%d/%m/%Y')})\n"
+                    f"• Status: Faturamento programado para execução hoje\n\n"
+                    f"Por favor, confirmem e finalizem a emissão com urgência.\n\n"
+                    f"Atenciosamente,\nGlobex Multimodal"
+                )
                 sucesso, err = enviar_email_para_todos(prov, remetente, senha, lista_destinos, assunto, corpo, cliente, num_prop, supabase)
                 if sucesso:
                     supabase.table("faturamentos").update({"alerta_enviado": 3}).eq("id", rid).execute()
                     disparos += 1
 
         if disparos > 0:
-            return f"Automação executada! {disparos} alerta(s) operacional(is) disparado(s) para a equipa."
+            return f"Automação executada! {disparos} alerta(s) operacional(is) disparado(s) para a equipe."
         return "Nenhum alerta de faturamento pendente para hoje."
     except Exception as e:
         return f"Erro na automação: {e}"
@@ -628,9 +681,9 @@ def executar():
                     idx = row_data.name
                     dias = df.loc[idx, 'dias_uteis_restantes']
                     if dias <= 0:
-                        return ['background-color: #ffe6e6'] * len(row_data)  # Vermelho claro para hoje
+                        return ['background-color: #ffe6e6'] * len(row_data)
                     elif dias in [1, 2]:
-                        return ['background-color: #fff3cd'] * len(row_data)  # Amarelo claro para 1 ou 2 dias úteis
+                        return ['background-color: #fff3cd'] * len(row_data)
                     return [''] * len(row_data)
 
                 st.dataframe(display_df.style.apply(colorir_linhas_faturamento, axis=1), use_container_width=True, hide_index=True)
@@ -760,7 +813,7 @@ def executar():
             if res_logs and res_logs.data:
                 df_logs = pd.DataFrame(res_logs.data)
         except Exception as e:
-            st.warning(f"Aviso: Não foi possível carregar os logs (verifique se a tabela 'logs_faturamento' foi criada no Supabase). Erro: {e}")
+            st.warning(f"Aviso: Não foi possível carregar os logs. Erro: {e}")
 
         if df_logs.empty:
             st.info("Nenhum log de mensagem registado até ao momento.")
