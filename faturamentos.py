@@ -182,7 +182,7 @@ def executar_automacao_faturamentos(supabase, config_db):
         if res_cont and res_cont.data:
             for c in res_cont.data:
                 if c.get('num_contrato') and c.get('data_fim'):
-                    map_vencimentos[str(c['num_contrato'])] = str(c['data_fim'])
+                    map_vencimentos[str(c['num_contrato']).strip()] = str(c['data_fim'])
 
         hoje = datetime.now().date()
         disparos = 0
@@ -190,7 +190,7 @@ def executar_automacao_faturamentos(supabase, config_db):
         for item in registros:
             rid = item['id']
             cliente = item['cliente']
-            num_prop = str(item['id_contrato'])
+            num_prop = str(item['id_contrato']).strip()
             condicao = item['condicao']
             inicio_str = item['inicio_periodo']
             alerta_enviado = item.get('alerta_enviado', 0) or 0
@@ -608,12 +608,12 @@ def executar():
                 try:
                     res_cont = supabase.table("contratos").select("id, num_contrato, data_fim").execute()
                     map_contratos = {str(c['id']): str(c['num_contrato']) for c in res_cont.data} if res_cont and res_cont.data else {}
-                    map_vencimentos = {str(c['num_contrato']): str(c['data_fim']) for c in res_cont.data if c.get('num_contrato') and c.get('data_fim')}
+                    map_vencimentos = {str(c['num_contrato']).strip(): str(c['data_fim']) for c in res_cont.data if c.get('num_contrato') and c.get('data_fim')}
                 except Exception:
                     map_contratos = {}
                     map_vencimentos = {}
 
-                df['id_contrato_real'] = df['id_contrato'].apply(lambda x: map_contratos.get(str(x), str(x)))
+                df['id_contrato_real'] = df['id_contrato'].apply(lambda x: map_contratos.get(str(x).strip(), str(x)))
 
                 previsoes = []
                 status_vigencia = []
@@ -625,19 +625,21 @@ def executar():
                     p_val = bool(row['pular_mes_atual']) if (row.get('pular_mes_atual') is not None and pd.notna(row['pular_mes_atual'])) else False
                     dt_prev = calcular_previsao_faturamento(row['condicao'], row['inicio_periodo'], d_val, p_val)
                     
-                    num_p = str(row['id_contrato'])
+                    num_p = str(row['id_contrato']).strip()
+                    num_p_real = str(row['id_contrato_real']).strip()
                     status_str = "Ativo"
 
-                    if num_p in map_vencimentos:
+                    # Verifica se atingiu ou ultrapassou a data de fim do contrato em qualquer das chaves mapeadas
+                    venc_str = map_vencimentos.get(num_p) or map_vencimentos.get(num_p_real)
+                    if venc_str:
                         try:
-                            venc_dt = datetime.strptime(map_vencimentos[num_p], "%Y-%m-%d").date()
-                            if dt_prev >= venc_dt:
-                                dt_prev = venc_dt
-                                status_str = "⚠️ Último Faturamento (Fim de Contrato Atingido)"
+                            venc_dt = datetime.strptime(venc_str, "%Y-%m-%d").date()
+                            if dt_prev >= venc_dt or hoje >= venc_dt:
+                                status_str = "⚠️ Fim de contrato atingido, consultar antes de faturar"
                         except Exception:
                             pass
 
-                    if dt_prev < hoje:
+                    if dt_prev < hoje and status_str == "Ativo":
                         inicio_dt = datetime.strptime(row['inicio_periodo'], "%Y-%m-%d").date()
                         novo_mes = inicio_dt.month % 12 + 1
                         novo_ano = inicio_dt.year + (1 if inicio_dt.month == 12 else 0)
@@ -680,7 +682,10 @@ def executar():
                 def colorir_linhas_faturamento(row_data):
                     idx = row_data.name
                     dias = df.loc[idx, 'dias_uteis_restantes']
-                    if dias <= 0:
+                    status_txt = df.loc[idx, 'status_visual']
+                    if "Fim de contrato atingido" in status_txt:
+                        return ['background-color: #ffe6e6'] * len(row_data) # Vermelho claro para fim de contrato
+                    elif dias <= 0:
                         return ['background-color: #ffe6e6'] * len(row_data)
                     elif dias in [1, 2]:
                         return ['background-color: #fff3cd'] * len(row_data)
