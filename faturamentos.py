@@ -7,6 +7,7 @@ from email.mime.multipart import MIMEMultipart
 import os
 import calendar
 
+
 def carregar_config_email_faturamento(supabase):
     try:
         res = supabase.table("config_email_faturamento").select("*").eq("id", 1).execute()
@@ -16,9 +17,17 @@ def carregar_config_email_faturamento(supabase):
         pass
     return {}
 
+
+def normalizar_quebras_email(texto):
+    """Padroniza quebras de linha para evitar colapso em clientes de e-mail."""
+    texto_limpo = texto.replace("\r\n", "\n").replace("\r", "\n")
+    return texto_limpo.replace("\n", "\r\n")
+
+
 def enviar_email_para_todos(provedor, email_remetente, senha, lista_destinos, assunto, mensagem, cliente, proposta, supabase):
     sucessos = 0
     erros = []
+    mensagem_smtp = normalizar_quebras_email(mensagem)
     try:
         if provedor == "Gmail":
             smtp_server = "smtp.gmail.com"
@@ -42,7 +51,7 @@ def enviar_email_para_todos(provedor, email_remetente, senha, lista_destinos, as
                 msg['From'] = email_remetente
                 msg['To'] = destino
                 msg['Subject'] = assunto
-                msg.attach(MIMEText(mensagem, 'plain'))
+                msg.attach(MIMEText(mensagem_smtp, 'plain', 'utf-8'))
                 server.sendmail(email_remetente, destino, msg.as_string())
                 sucessos += 1
             except Exception as ex:
@@ -67,6 +76,7 @@ def enviar_email_para_todos(provedor, email_remetente, senha, lista_destinos, as
     except Exception as e:
         return False, str(e)
 
+
 def obter_feriados_brasil(ano):
     return [
         datetime(ano, 1, 1).date(),
@@ -80,12 +90,14 @@ def obter_feriados_brasil(ano):
         datetime(ano, 12, 25).date(),
     ]
 
+
 def eh_dia_util(data):
     if data.weekday() >= 5:
         return False
     if data in obter_feriados_brasil(data.year):
         return False
     return True
+
 
 def ajustar_dia_util(data_obj, direcao="retroceder"):
     while not eh_dia_util(data_obj):
@@ -94,6 +106,7 @@ def ajustar_dia_util(data_obj, direcao="retroceder"):
         else:
             data_obj += timedelta(days=1)
     return data_obj
+
 
 def calcular_previsao_faturamento(condicao, inicio_dt, dia_fixo=10, pular_mes_atual=False):
     if isinstance(inicio_dt, str):
@@ -149,6 +162,7 @@ def calcular_previsao_faturamento(condicao, inicio_dt, dia_fixo=10, pular_mes_at
         data_fatura = base_dt
     return data_fatura
 
+
 def calcular_dias_uteis_restantes(data_alvo, data_atual):
     if data_alvo <= data_atual:
         return (data_alvo - data_atual).days
@@ -159,6 +173,7 @@ def calcular_dias_uteis_restantes(data_alvo, data_atual):
             dias_uteis += 1
         cur_date += timedelta(days=1)
     return dias_uteis
+
 
 def executar_automacao_faturamentos(supabase, config_db):
     remetente = st.session_state.get("fat_email_remetente") or config_db.get("email_remetente")
@@ -213,7 +228,7 @@ def executar_automacao_faturamentos(supabase, config_db):
                 novo_ano = inicio_dt.year + (1 if inicio_dt.month == 12 else 0)
                 novo_dia = min(inicio_dt.day, calendar.monthrange(novo_ano, novo_mes)[1])
                 novo_inicio_str = datetime(novo_ano, novo_mes, novo_dia).strftime("%Y-%m-%d")
-                
+
                 supabase.table("faturamentos").update({
                     "inicio_periodo": novo_inicio_str,
                     "alerta_enviado": 0
@@ -226,15 +241,16 @@ def executar_automacao_faturamentos(supabase, config_db):
             if dias_uteis_restantes == 2 and alerta_enviado < 1:
                 assunto = f"[ALERTA OPERACIONAL] Preparação de Faturamento - Proposta Nº {num_prop} ({cliente})"
                 corpo = (
-                    f"Atenção Equipe Operacional,\n\n"
-                    f"Este é um aviso automático de preparação de faturamento.\n\n"
-                    f"• Cliente: {cliente}\n"
-                    f"• Nº Proposta / Contrato: {num_prop}\n"
-                    f"• Condição de Faturamento: {condicao}\n"
-                    f"• Data Prevista: {data_fatura.strftime('%d/%m/%Y')}\n"
-                    f"• Status: Faltam 2 dias úteis para a data limite de preparação dos dados\n\n"
-                    f"Por favor, certifiquem-se de que as medições e informações operacionais estão em andamento.\n\n"
-                    f"Atenciosamente,\nGlobex Multimodal"
+                    "Atenção Equipe Operacional,\n\n"
+                    "Este é um aviso automático de preparação de faturamento.\n\n"
+                    f"- Cliente: {cliente}\n"
+                    f"- Nº Proposta / Contrato: {num_prop}\n"
+                    f"- Condição de Faturamento: {condicao}\n"
+                    f"- Data Prevista: {data_fatura.strftime('%d/%m/%Y')}\n"
+                    "- Status: Faltam 2 dias úteis para a data limite de preparação dos dados\n\n"
+                    "Por favor, certifiquem-se de que as medições e informações operacionais estão em andamento.\n\n"
+                    "Atenciosamente,\n"
+                    "Globex Multimodal"
                 )
                 sucesso, err = enviar_email_para_todos(prov, remetente, senha, lista_destinos, assunto, corpo, cliente, num_prop, supabase)
                 if sucesso:
@@ -245,15 +261,16 @@ def executar_automacao_faturamentos(supabase, config_db):
             elif dias_uteis_restantes == 1 and alerta_enviado < 2:
                 assunto = f"[ALERTA OPERACIONAL] Véspera de Faturamento - Proposta Nº {num_prop} ({cliente})"
                 corpo = (
-                    f"Atenção Equipe Operacional,\n\n"
-                    f"Este é um aviso de véspera de faturamento.\n\n"
-                    f"• Cliente: {cliente}\n"
-                    f"• Nº Proposta / Contrato: {num_prop}\n"
-                    f"• Condição de Faturamento: {condicao}\n"
-                    f"• Data Prevista: AMANHÃ ({data_fatura.strftime('%d/%m/%Y')})\n"
-                    f"• Status: 1 dia útil restante para emissão/envio\n\n"
-                    f"Certifiquem-se de que todos os dados estão prontos para o faturamento de amanhã.\n\n"
-                    f"Atenciosamente,\nGlobex Multimodal"
+                    "Atenção Equipe Operacional,\n\n"
+                    "Este é um aviso de véspera de faturamento.\n\n"
+                    f"- Cliente: {cliente}\n"
+                    f"- Nº Proposta / Contrato: {num_prop}\n"
+                    f"- Condição de Faturamento: {condicao}\n"
+                    f"- Data Prevista: AMANHÃ ({data_fatura.strftime('%d/%m/%Y')})\n"
+                    "- Status: 1 dia útil restante para emissão/envio\n\n"
+                    "Certifiquem-se de que todos os dados estão prontos para o faturamento de amanhã.\n\n"
+                    "Atenciosamente,\n"
+                    "Globex Multimodal"
                 )
                 sucesso, err = enviar_email_para_todos(prov, remetente, senha, lista_destinos, assunto, corpo, cliente, num_prop, supabase)
                 if sucesso:
@@ -264,15 +281,16 @@ def executar_automacao_faturamentos(supabase, config_db):
             elif dias_uteis_restantes <= 0 and alerta_enviado < 3:
                 assunto = f"[URGENTE - HOJE] Prazo de Faturamento - Proposta Nº {num_prop} ({cliente})"
                 corpo = (
-                    f"Atenção Equipe Operacional,\n\n"
-                    f"O prazo limite para a realização do faturamento é HOJE.\n\n"
-                    f"• Cliente: {cliente}\n"
-                    f"• Nº Proposta / Contrato: {num_prop}\n"
-                    f"• Condição de Faturamento: {condicao}\n"
-                    f"• Data Prevista: HOJE ({data_fatura.strftime('%d/%m/%Y')})\n"
-                    f"• Status: Faturamento programado para execução hoje\n\n"
-                    f"Por favor, confirmem e finalizem a emissão com urgência.\n\n"
-                    f"Atenciosamente,\nGlobex Multimodal"
+                    "Atenção Equipe Operacional,\n\n"
+                    "O prazo limite para a realização do faturamento é HOJE.\n\n"
+                    f"- Cliente: {cliente}\n"
+                    f"- Nº Proposta / Contrato: {num_prop}\n"
+                    f"- Condição de Faturamento: {condicao}\n"
+                    f"- Data Prevista: HOJE ({data_fatura.strftime('%d/%m/%Y')})\n"
+                    "- Status: Faturamento programado para execução hoje\n\n"
+                    "Por favor, confirmem e finalizem a emissão com urgência.\n\n"
+                    "Atenciosamente,\n"
+                    "Globex Multimodal"
                 )
                 sucesso, err = enviar_email_para_todos(prov, remetente, senha, lista_destinos, assunto, corpo, cliente, num_prop, supabase)
                 if sucesso:
@@ -284,6 +302,7 @@ def executar_automacao_faturamentos(supabase, config_db):
         return "Nenhum alerta de faturamento pendente para hoje."
     except Exception as e:
         return f"Erro na automação: {e}"
+
 
 def executar():
     st.markdown("""
@@ -323,7 +342,7 @@ def executar():
             st.image(caminho_logo_side, use_container_width=True)
         else:
             st.markdown("### 🌐 GLOBEX MULTIMODAL")
-        
+
         st.markdown("---")
         menu = ["Novo / Editar Faturamento", "Painel de Faturamentos Ativos", "Configurações de E-mail", "Gerenciar Logs de Mensagens"]
         opcao = st.radio("Navegação Faturamentos", menu)
@@ -354,7 +373,7 @@ def executar():
                 pass
 
             contratos_disponiveis = [
-                c for c in lista_contratos 
+                c for c in lista_contratos
                 if str(c['num_contrato']) not in propostas_ja_cadastradas and str(c['id']) not in propostas_ja_cadastradas
             ]
 
@@ -388,7 +407,7 @@ def executar():
                             st.rerun()
                         except Exception as e:
                             st.error(f"Erro ao ignorar contrato: {e}")
-                
+
                 numero_proposta = str(contrato_escolhido['num_contrato'])
                 cliente_nome = contrato_escolhido['cliente']
                 email_cobranca = contrato_escolhido.get('email_cliente', '')
@@ -408,7 +427,7 @@ def executar():
                             "1º dia útil do mês"
                         ]
                     )
-                    
+
                     dia_fixo = 10
                     if condicao == "Data Fixa":
                         dia_fixo = st.number_input("Dia do mês para faturar:", min_value=1, max_value=31, value=10)
@@ -475,7 +494,7 @@ def executar():
                     ],
                     key="cond_man"
                 )
-                
+
                 dia_fixo_man = 10
                 if condicao_man == "Data Fixa":
                     dia_fixo_man = st.number_input("Dia do mês para faturar:", min_value=1, max_value=31, value=10, key="dia_fixo_man")
@@ -554,11 +573,11 @@ def executar():
                 col_e1, col_e2 = st.columns(2)
                 with col_e1:
                     nova_condicao = st.selectbox("Nova Condição de Faturamento *", condicoes_lista, index=idx_cond)
-                    
+
                     novo_dia_fixo = 10
                     if reg_atual.get('dia_fixo') is not None and pd.notna(reg_atual['dia_fixo']):
                         novo_dia_fixo = int(reg_atual['dia_fixo'])
-                    
+
                     if nova_condicao == "Data Fixa":
                         novo_dia_fixo = st.number_input("Dia do mês para faturar:", min_value=1, max_value=31, value=novo_dia_fixo)
 
@@ -624,12 +643,11 @@ def executar():
                     d_val = int(row['dia_fixo']) if (row.get('dia_fixo') is not None and pd.notna(row['dia_fixo'])) else 10
                     p_val = bool(row['pular_mes_atual']) if (row.get('pular_mes_atual') is not None and pd.notna(row['pular_mes_atual'])) else False
                     dt_prev = calcular_previsao_faturamento(row['condicao'], row['inicio_periodo'], d_val, p_val)
-                    
+
                     num_p = str(row['id_contrato']).strip()
                     num_p_real = str(row['id_contrato_real']).strip()
                     status_str = "Ativo"
 
-                    # Verifica se atingiu ou ultrapassou a data de fim do contrato em qualquer das chaves mapeadas
                     venc_str = map_vencimentos.get(num_p) or map_vencimentos.get(num_p_real)
                     if venc_str:
                         try:
@@ -645,7 +663,7 @@ def executar():
                         novo_ano = inicio_dt.year + (1 if inicio_dt.month == 12 else 0)
                         novo_dia = min(inicio_dt.day, calendar.monthrange(novo_ano, novo_mes)[1])
                         novo_inicio_str = datetime(novo_ano, novo_mes, novo_dia).strftime("%Y-%m-%d")
-                        
+
                         try:
                             supabase.table("faturamentos").update({
                                 "inicio_periodo": novo_inicio_str,
@@ -653,14 +671,14 @@ def executar():
                             }).eq("id", row['id']).execute()
                         except Exception:
                             pass
-                        
+
                         inicio_dt = datetime.strptime(novo_inicio_str, "%Y-%m-%d").date()
                         dt_prev = calcular_previsao_faturamento(row['condicao'], inicio_dt, d_val, p_val)
 
                     previsoes.append(dt_prev.strftime('%d/%m/%Y'))
                     status_vigencia.append(status_str)
                     dias_uteis_lista.append(calcular_dias_uteis_restantes(dt_prev, hoje))
-                
+
                 df['previsao_faturamento'] = previsoes
                 df['status_visual'] = status_vigencia
                 df['dias_uteis_restantes'] = dias_uteis_lista
@@ -669,22 +687,22 @@ def executar():
 
                 display_df = df[['id_contrato_real', 'cliente', 'condicao', 'inicio_periodo', 'previsao_faturamento', 'status_visual']].copy()
                 display_df['inicio_periodo'] = pd.to_datetime(display_df['inicio_periodo']).dt.strftime('%d/%m/%Y')
-                
+
                 display_df.columns = [
-                    'Número da Proposta', 
-                    'Cliente', 
-                    'Condição', 
-                    'Início Período', 
-                    'Previsão de Faturamento', 
+                    'Número da Proposta',
+                    'Cliente',
+                    'Condição',
+                    'Início Período',
+                    'Previsão de Faturamento',
                     'Status / Vigência'
                 ]
-                
+
                 def colorir_linhas_faturamento(row_data):
                     idx = row_data.name
                     dias = df.loc[idx, 'dias_uteis_restantes']
                     status_txt = df.loc[idx, 'status_visual']
                     if "Fim de contrato atingido" in status_txt:
-                        return ['background-color: #ffe6e6'] * len(row_data) # Vermelho claro para fim de contrato
+                        return ['background-color: #ffe6e6'] * len(row_data)
                     elif dias <= 0:
                         return ['background-color: #ffe6e6'] * len(row_data)
                     elif dias in [1, 2]:
@@ -712,19 +730,19 @@ def executar():
                         cli_nome = reg_alvo['cliente']
                         prop_num = str(reg_alvo['id_contrato'])
                         inicio_str = reg_alvo['inicio_periodo']
-                        
+
                         try:
                             inicio_dt = datetime.strptime(inicio_str, "%Y-%m-%d").date()
                             novo_mes = inicio_dt.month % 12 + 1
                             novo_ano = inicio_dt.year + (1 if inicio_dt.month == 12 else 0)
                             novo_dia = min(inicio_dt.day, calendar.monthrange(novo_ano, novo_mes)[1])
                             novo_inicio_str = datetime(novo_ano, novo_mes, novo_dia).strftime("%Y-%m-%d")
-                            
+
                             supabase.table("faturamentos").update({
                                 "inicio_periodo": novo_inicio_str,
                                 "alerta_enviado": 0
                             }).eq("id", reg_concluir_id).execute()
-                            
+
                             try:
                                 supabase.table("logs_faturamento").insert({
                                     "data_envio": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -773,9 +791,9 @@ def executar():
         provedor = st.selectbox("Provedor SMTP", ["Outlook / Office365", "Gmail"], index=0 if st.session_state["fat_provedor"] == "Outlook / Office365" else 1, key="sel_fat_prov")
         email_remetente = st.text_input("E-mail Remetente", value=st.session_state["fat_email_remetente"], key="inp_fat_rem")
         senha_remetente = st.text_input("Senha / Senha de App do Remetente", type="password", value=st.session_state["fat_senha_remetente"], key="inp_fat_sen")
-        
+
         emails_destino = st.text_area(
-            "E-mails de Destino (Notificações Operacionais)", 
+            "E-mails de Destino (Notificações Operacionais)",
             value=st.session_state["fat_emails_destino"],
             placeholder="Ex: operacional1@globex.com.br, operacional2@globex.com.br, gerente@globex.com.br",
             key="area_fat_dest"
@@ -825,5 +843,5 @@ def executar():
         else:
             display_logs = df_logs[['data_envio', 'cliente', 'proposta', 'status', 'mensagem']].copy()
             display_logs.columns = ['Data / Hora do Envio', 'Cliente', 'Proposta Nº', 'Status do Envio', 'Mensagem Enviada']
-            
+
             st.dataframe(display_logs, use_container_width=True, hide_index=True)
