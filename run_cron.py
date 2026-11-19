@@ -7,6 +7,7 @@ import pandas as pd
 import calendar
 from supabase import create_client
 
+
 def obter_feriados_brasil(ano):
     return [
         datetime(ano, 1, 1).date(),
@@ -20,12 +21,14 @@ def obter_feriados_brasil(ano):
         datetime(ano, 12, 25).date(),
     ]
 
+
 def eh_dia_util(data):
     if data.weekday() >= 5:
         return False
     if data in obter_feriados_brasil(data.year):
         return False
     return True
+
 
 def ajustar_dia_util(data_obj, direcao="retroceder"):
     while not eh_dia_util(data_obj):
@@ -34,6 +37,7 @@ def ajustar_dia_util(data_obj, direcao="retroceder"):
         else:
             data_obj += timedelta(days=1)
     return data_obj
+
 
 def calcular_previsao_faturamento(condicao, inicio_dt, dia_fixo=10, pular_mes_atual=False):
     if isinstance(inicio_dt, str):
@@ -89,6 +93,7 @@ def calcular_previsao_faturamento(condicao, inicio_dt, dia_fixo=10, pular_mes_at
         data_fatura = base_dt
     return data_fatura
 
+
 def calcular_dias_uteis_restantes(data_alvo, data_atual):
     if data_alvo <= data_atual:
         return (data_alvo - data_atual).days
@@ -100,7 +105,14 @@ def calcular_dias_uteis_restantes(data_alvo, data_atual):
         cur_date += timedelta(days=1)
     return dias_uteis
 
+
+def normalizar_quebras_email(texto):
+    texto_limpo = texto.replace("\r\n", "\n").replace("\r", "\n")
+    return texto_limpo.replace("\n", "\r\n")
+
+
 def enviar_email(provedor, remetente, senha, destinos_str, assunto, corpo):
+    corpo_smtp = normalizar_quebras_email(corpo)
     try:
         if provedor == "Gmail":
             smtp_server = "smtp.gmail.com"
@@ -125,7 +137,7 @@ def enviar_email(provedor, remetente, senha, destinos_str, assunto, corpo):
                 msg['From'] = remetente
                 msg['To'] = destino
                 msg['Subject'] = assunto
-                msg.attach(MIMEText(corpo, 'plain'))
+                msg.attach(MIMEText(corpo_smtp, 'plain', 'utf-8'))
                 server.sendmail(remetente, destino, msg.as_string())
                 sucessos += 1
             except Exception as ex:
@@ -137,6 +149,7 @@ def enviar_email(provedor, remetente, senha, destinos_str, assunto, corpo):
         return False, str(erros)
     except Exception as e:
         return False, str(e)
+
 
 def registrar_log(supabase_client, tipo, destinatario, assunto, status, detalhes):
     try:
@@ -151,6 +164,7 @@ def registrar_log(supabase_client, tipo, destinatario, assunto, status, detalhes
         supabase_client.table("logs_envios").insert(log_data).execute()
     except Exception:
         pass
+
 
 def executar_cron_geral():
     url = os.environ.get("SUPABASE_URL")
@@ -187,30 +201,43 @@ def executar_cron_geral():
                     a30 = item.get('alerta_30_enviado', 0)
                     tipo_doc = item.get('tipo', 'Contrato')
                     objeto_doc = item.get('objeto', 'Armazenagem')
-                    
+
                     data_fim = datetime.strptime(str(data_fim_str)[:10], "%Y-%m-%d").date()
                     dias_restantes = (data_fim - hoje).days
 
                     if 30 < dias_restantes <= 45 and a45 == 0 and comercial:
                         assunto = f"[ALERTA RENOVAÇÃO] {tipo_doc} próxima de vencer - {cliente}"
                         corpo = (
-                            f"Atenção Comercial Globex,\n\nExiste um documento próximo ao período de renovação.\n\n"
-                            f"• Cliente: {cliente}\n• Tipo: {tipo_doc}\n• Objeto: {objeto_doc}\n"
-                            f"• Nº Documento: {num_contrato}\n• Data de Vencimento: {data_fim.strftime('%d/%m/%Y')}\n"
-                            f"• Dias restantes: {dias_restantes}\n\nAtenciosamente,\nGlobex Multimodal"
+                            "Atenção Comercial Globex,\n\n"
+                            "Existe um documento próximo ao período de renovação.\n\n"
+                            f"- Cliente: {cliente}\n"
+                            f"- Tipo: {tipo_doc}\n"
+                            f"- Objeto: {objeto_doc}\n"
+                            f"- Nº Documento: {num_contrato}\n"
+                            f"- Data de Vencimento: {data_fim.strftime('%d/%m/%Y')}\n"
+                            f"- Dias restantes: {dias_restantes}\n\n"
+                            "Atenciosamente,\n"
+                            "Globex Multimodal"
                         )
                         suc, err = enviar_email(prov_c, rem_c, sen_c, comercial, assunto, corpo)
                         if suc:
                             supabase.table("contratos").update({"alerta_45_enviado": 1, "status": "Informado ao comercial por email"}).eq("id", cid).execute()
                             registrar_log(supabase, f"Alerta 45 Dias (Comercial) - {tipo_doc}", comercial, assunto, "Sucesso", f"{tipo_doc} {num_contrato}")
-                    
+
                     elif dias_restantes <= 30 and a30 == 0 and email_cliente:
                         assunto = f"Globex Multimodal - Renovação de {tipo_doc} Nº {num_contrato} ({objeto_doc})"
                         corpo = (
-                            f"Prezado(a) cliente {cliente},\n\nExiste um documento próximo ao período de renovação.\n\n"
-                            f"• Cliente: {cliente}\n• Tipo: {tipo_doc}\n• Objeto: {objeto_doc}\n"
-                            f"• Nº Documento: {num_contrato}\n• Data de Vencimento: {data_fim.strftime('%d/%m/%Y')}\n"
-                            f"• Dias restantes: {dias_restantes}\n\nAguarde o contato de nossa equipe.\n\nAtenciosamente,\nGlobex Multimodal"
+                            f"Prezado(a) cliente {cliente},\n\n"
+                            "Existe um documento próximo ao período de renovação.\n\n"
+                            f"- Cliente: {cliente}\n"
+                            f"- Tipo: {tipo_doc}\n"
+                            f"- Objeto: {objeto_doc}\n"
+                            f"- Nº Documento: {num_contrato}\n"
+                            f"- Data de Vencimento: {data_fim.strftime('%d/%m/%Y')}\n"
+                            f"- Dias restantes: {dias_restantes}\n\n"
+                            "Aguarde o contato de nossa equipe.\n\n"
+                            "Atenciosamente,\n"
+                            "Globex Multimodal"
                         )
                         suc, err = enviar_email(prov_c, rem_c, sen_c, email_cliente, assunto, corpo)
                         if suc:
@@ -271,10 +298,16 @@ def executar_cron_geral():
                     if dias_uteis_restantes == 2 and alerta_enviado < 1:
                         assunto = f"[ALERTA OPERACIONAL] Preparação de Faturamento - Proposta Nº {num_prop} ({cliente})"
                         corpo = (
-                            f"Atenção Equipe Operacional,\n\nEste é um aviso automático de preparação de faturamento.\n\n"
-                            f"• Cliente: {cliente}\n• Nº Proposta / Contrato: {num_prop}\n• Condição de Faturamento: {condicao}\n"
-                            f"• Data Prevista: {data_fatura.strftime('%d/%m/%Y')}\n• Status: Faltam 2 dias úteis para a data limite de preparação dos dados\n\n"
-                            f"Por favor, certifiquem-se de que as medições e informações operacionais estão em andamento.\n\nAtenciosamente,\nGlobex Multimodal"
+                            "Atenção Equipe Operacional,\n\n"
+                            "Este é um aviso automático de preparação de faturamento.\n\n"
+                            f"- Cliente: {cliente}\n"
+                            f"- Nº Proposta / Contrato: {num_prop}\n"
+                            f"- Condição de Faturamento: {condicao}\n"
+                            f"- Data Prevista: {data_fatura.strftime('%d/%m/%Y')}\n"
+                            "- Status: Faltam 2 dias úteis para a data limite de preparação dos dados\n\n"
+                            "Por favor, certifiquem-se de que as medições e informações operacionais estão em andamento.\n\n"
+                            "Atenciosamente,\n"
+                            "Globex Multimodal"
                         )
                         suc, err = enviar_email(prov_f, rem_f, sen_f, destinos_f, assunto, corpo)
                         if suc:
@@ -285,10 +318,16 @@ def executar_cron_geral():
                     elif dias_uteis_restantes == 1 and alerta_enviado < 2:
                         assunto = f"[ALERTA OPERACIONAL] Véspera de Faturamento - Proposta Nº {num_prop} ({cliente})"
                         corpo = (
-                            f"Atenção Equipe Operacional,\n\nEste é um aviso de véspera de faturamento.\n\n"
-                            f"• Cliente: {cliente}\n• Nº Proposta / Contrato: {num_prop}\n• Condição de Faturamento: {condicao}\n"
-                            f"• Data Prevista: AMANHÃ ({data_fatura.strftime('%d/%m/%Y')})\n• Status: 1 dia útil restante para emissão/envio\n\n"
-                            f"Certifiquem-se de que todos os dados estão prontos para o faturamento de amanhã.\n\nAtenciosamente,\nGlobex Multimodal"
+                            "Atenção Equipe Operacional,\n\n"
+                            "Este é um aviso de véspera de faturamento.\n\n"
+                            f"- Cliente: {cliente}\n"
+                            f"- Nº Proposta / Contrato: {num_prop}\n"
+                            f"- Condição de Faturamento: {condicao}\n"
+                            f"- Data Prevista: AMANHÃ ({data_fatura.strftime('%d/%m/%Y')})\n"
+                            "- Status: 1 dia útil restante para emissão/envio\n\n"
+                            "Certifiquem-se de que todos os dados estão prontos para o faturamento de amanhã.\n\n"
+                            "Atenciosamente,\n"
+                            "Globex Multimodal"
                         )
                         suc, err = enviar_email(prov_f, rem_f, sen_f, destinos_f, assunto, corpo)
                         if suc:
@@ -299,10 +338,16 @@ def executar_cron_geral():
                     elif dias_uteis_restantes <= 0 and alerta_enviado < 3:
                         assunto = f"[URGENTE - HOJE] Prazo de Faturamento - Proposta Nº {num_prop} ({cliente})"
                         corpo = (
-                            f"Atenção Equipe Operacional,\n\nO prazo limite para a realização do faturamento é HOJE.\n\n"
-                            f"• Cliente: {cliente}\n• Nº Proposta / Contrato: {num_prop}\n• Condição de Faturamento: {condicao}\n"
-                            f"• Data Prevista: HOJE ({data_fatura.strftime('%d/%m/%Y')})\n• Status: Faturamento programado para execução hoje\n\n"
-                            f"Por favor, confirmem e finalizem a emissão com urgência.\n\nAtenciosamente,\nGlobex Multimodal"
+                            "Atenção Equipe Operacional,\n\n"
+                            "O prazo limite para a realização do faturamento é HOJE.\n\n"
+                            f"- Cliente: {cliente}\n"
+                            f"- Nº Proposta / Contrato: {num_prop}\n"
+                            f"- Condição de Faturamento: {condicao}\n"
+                            f"- Data Prevista: HOJE ({data_fatura.strftime('%d/%m/%Y')})\n"
+                            "- Status: Faturamento programado para execução hoje\n\n"
+                            "Por favor, confirmem e finalizem a emissão com urgência.\n\n"
+                            "Atenciosamente,\n"
+                            "Globex Multimodal"
                         )
                         suc, err = enviar_email(prov_f, rem_f, sen_f, destinos_f, assunto, corpo)
                         if suc:
@@ -310,6 +355,7 @@ def executar_cron_geral():
                             registrar_log(supabase, "Cron Faturamento - Hoje", destinos_f, assunto, "Sucesso", f"Proposta {num_prop}")
     except Exception as e:
         print(f"Erro no cron de faturamentos: {e}")
+
 
 if __name__ == "__main__":
     executar_cron_geral()
